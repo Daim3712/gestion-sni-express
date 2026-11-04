@@ -360,7 +360,7 @@ const IC = {
 const NAV = [['menu','Menu principal','menu'],['home','Accueil','home'],['facture','Facture','fac'],['registre','Registre','reg'],['charges','Charges','chg'],['employes','Employés','emp'],['paie','Paie','pay'],['pdg','PDG','pdg'],['tracto','Tractopelle','trc'],['rapports','Rapports','rap'],['param','Paramètres','par']];
 const svg = k => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${IC[k]}</svg>`;
 let view = 'menu';
-const VERSION_APP='2.0.70';
+const VERSION_APP='2.0.71';
 /* Créateur du logiciel : coordonnées fixes, intégrées au code (identiques dans chaque installation, non modifiables) */
 const CREATEUR={nom:'ALI DAÏM',email:'daim3575@gmail.com',tels:['+269 323 05 70','+269 432 29 14']};
 const waLien=t=>'https://wa.me/'+t.replace(/\D/g,'');
@@ -2569,8 +2569,13 @@ function bv(e,p){
   MONTANTS.forEach(k=>o[k]=n0(e[k]));
   Object.assign(o,{present:26,absent:0,retards:0,modePaie:e.modePaie||'Espèces',taux:n0(e.taux),urgence:'',
     statut:'attente',datePaye:''});
-  return Object.assign(o,(e.mois&&e.mois[p])||{});
+  Object.assign(o,(e.mois&&e.mois[p])||{});
+  /* salaire enlevé pour ce mois : rien à payer, aucune charge « Salaire » ; les montants restent gardés pour « Remettre le salaire » */
+  if(o.retire) MONTANTS.forEach(k=>o[k]=0);
+  return o;
 }
+/* valeurs du mois sans tenir compte d'un salaire enlevé (pour l'enregistrer de nouveau normalement) */
+const bvR=(e,p)=>{ const m=(e.mois||{})[p]; if(!m||!m.retire) return bv(e,p); const {retire,...r}=m; return bv({...e,mois:{...e.mois,[p]:r}},p); };
 const brutV = v => GAINS.reduce((s,[k])=>s+n0(v[k]),0);
 const retV = v => RETS.reduce((s,[k])=>s+n0(v[k]),0);
 const brutE = (e,p=ymNow()) => brutV(bv(e,p));
@@ -2586,7 +2591,8 @@ async function autoSalaires(){
     while(p<=now && guard++<120){
       if(actif(e,p)){
         const c=CHG.find(c=>c.type==='salaire'&&c.emp===e.id&&ym(c.date)===p), m=coutE(e,p);
-        if(!c) await put('charges',{id:uid(),type:'salaire',emp:e.id,date:new Date(p+'-28T12:00:00').toISOString(),montant:m,note:'Salaire '+e.nom+' – '+moisTxt(p)});
+        if(bv(e,p).retire){ if(c) await del('charges',c.id); }
+        else if(!c) await put('charges',{id:uid(),type:'salaire',emp:e.id,date:new Date(p+'-28T12:00:00').toISOString(),montant:m,note:'Salaire '+e.nom+' – '+moisTxt(p)});
         else if(n0(c.montant)!==m) await put('charges',{...c,montant:m});
       }
       p=nextYm(p);
@@ -2637,7 +2643,7 @@ function vPaie(m){
     ${list.length?`<div class="scroll"><table><thead><tr><th>N°</th><th>Employé</th><th>Fonction</th><th class="r">Jours</th><th class="r">Brut</th><th class="r">Retenues</th><th class="r">Net à payer</th><th>Statut</th><th></th></tr></thead><tbody>
       ${list.map(e=>{ const v=bv(e,pp); return `<tr><td>${h(numE(e))}</td><td><b>${h(e.nom)}</b></td><td>${h(e.poste)}</td><td class="r">${n0(v.present)}</td><td class="r num">${money(brutV(v))}</td><td class="r num">${money(retV(v))}</td><td class="r num"><b>${money(brutV(v)-retV(v))}</b></td>
         <td>${tagPaie(v)}</td>
-        <td><div class="btns" style="flex-wrap:wrap;min-width:220px"><button class="btn sm pri" onclick="voirBulletin('${e.id}')">Bulletin</button><button class="btn sm" onclick="voirRecuSal('${e.id}')">Reçu</button>${v.statut!=='paye'?`<button class="btn sm" onclick="marquerPaye('${e.id}')">Tout payer</button><button class="btn sm" onclick="verserPartie('${e.id}')">Verser une partie</button>`:''}<button class="btn sm" onclick="editMois('${e.id}')">Modifier ce mois</button><button class="btn sm" onclick="telechargerBulletin('${e.id}')">PDF</button></div></td></tr>`; }).join('')}
+        <td><div class="btns" style="flex-wrap:wrap;min-width:220px"><button class="btn sm pri" onclick="voirBulletin('${e.id}')">Bulletin</button>${v.retire?`<button class="btn sm pri" onclick="remettreSalaire('${e.id}')">Remettre le salaire</button>`:`<button class="btn sm" onclick="voirRecuSal('${e.id}')">Reçu</button>${v.statut!=='paye'?`<button class="btn sm" onclick="marquerPaye('${e.id}')">Tout payer</button><button class="btn sm" onclick="verserPartie('${e.id}')">Verser une partie</button>`:''}`}<button class="btn sm" onclick="editMois('${e.id}')">Modifier ce mois</button><button class="btn sm" onclick="telechargerBulletin('${e.id}')">PDF</button>${v.retire?'':`<button class="btn sm danger" onclick="enleverSalaire('${e.id}')">Enlever le salaire</button>`}</div></td></tr>`; }).join('')}
       <tr><td colspan="4"><b>Total du mois</b></td><td class="r num"><b>${money(totB)}</b></td><td class="r num"><b>${money(totR)}</b></td><td class="r num"><b>${money(totN)}</b></td><td colspan="2"></td></tr>
       <tr><td colspan="6">Déjà versé ce mois</td><td class="r num">${money(list.reduce((s,e)=>s+verseV(bv(e,pp)),0))}</td><td colspan="2"></td></tr>
       <tr><td colspan="6"><b>Reliquat restant à payer</b></td><td class="r num"><b style="color:${list.some(e=>resteV(bv(e,pp))>0)?'var(--unpaid)':'var(--paid)'}">${money(list.reduce((s,e)=>s+resteV(bv(e,pp)),0))}</b></td><td colspan="2"></td></tr></tbody></table></div>`
@@ -2712,7 +2718,7 @@ function paieAnneesCard(){
     ${rows.length>1?`<tr><td colspan="3"><b>Total toutes années</b></td><td class="r num"><b>${money(G.b)}</b></td><td class="r num"><b>${money(G.r)}</b></td><td class="r num"><b>${money(G.n)}</b></td><td class="r num"><b>${money(G.v)}</b></td><td class="r num"><b>${money(G.re)}</b></td><td></td></tr>`:''}</tbody></table></div></div>`;
 }
 function editMois(id){
-  const e=EMP.find(x=>x.id===id), v=bv(e,pp), n=(k,l)=>`<label class="f">${l}<input id="mm_${k}" type="number" inputmode="numeric" min="0" value="${h(v[k])}"></label>`;
+  const e=EMP.find(x=>x.id===id), v=bvR(e,pp), n=(k,l)=>`<label class="f">${l}<input id="mm_${k}" type="number" inputmode="numeric" min="0" value="${h(v[k])}"></label>`;
   const md=modalPdg(`<div class="head" style="margin-bottom:.6rem"><h2 style="margin:0">${h(e.nom)} – ${moisTxt(pp)}</h2><button class="btn" onclick="this.closest('.modal').remove()">Fermer</button></div>
     <p class="muted" style="margin-top:0">Ces valeurs ne changent que le bulletin de ce mois.</p>
     <div class="row">${n('present','Jours présent')}${n('absent','Jours absent')}${n('retards','Retards')}</div>
@@ -2805,7 +2811,7 @@ const netV = v => brutV(v)-retV(v);
 const verseV = v => v.statut==='paye' ? netV(v) : v.statut==='partiel' ? Math.min(n0(v.verse),netV(v)) : 0;
 const resteV = v => netV(v)-verseV(v);
 const TAG_PART = r => `<span class="tag" style="background:#FFF1D6;color:#8A5300">Payé en partie – reste ${money(r)}</span>`;
-function tagPaie(v){ if(v.statut==='paye') return `<span class="tag paid">Payé${v.datePaye?' le '+dOnly(v.datePaye+'T12:00:00'):''}</span>`; if(v.statut==='partiel') return TAG_PART(resteV(v)); return '<span class="tag unpaid">Impayé</span>'; }
+function tagPaie(v){ if(v.retire) return '<span class="tag">Salaire enlevé</span>'; if(v.statut==='paye') return `<span class="tag paid">Payé${v.datePaye?' le '+dOnly(v.datePaye+'T12:00:00'):''}</span>`; if(v.statut==='partiel') return TAG_PART(resteV(v)); return '<span class="tag unpaid">Impayé</span>'; }
 function fixStatut(v){ const net=netV(v), vs=n0(v.verse);
   if(v.statut==='partiel'){ if(vs<=0) v.statut='attente'; else if(vs>=net) v.statut='paye'; }
   if(v.statut==='paye') v.verse=net; if(v.statut==='attente'){ v.verse=0; v.datePaye=''; } else if(!v.datePaye) v.datePaye=auj();
@@ -2930,10 +2936,10 @@ let bq={q:'',m:'',s:''};
 function tousCard(){
   const L=listePaie(); if(!L.length) return '';
   return `<h3 style="margin:1.2rem 0 .4rem">Tous les employés – ${moisTxt(pp)}</h3>
-    <p class="muted" style="margin-top:0">Les salaires et toutes les valeurs de chaque employé se remplissent automatiquement à partir du dernier mois enregistré. Corrigez si besoin, puis enregistrez tout d’un coup.</p>
+    <p class="muted" style="margin-top:0">Les salaires et toutes les valeurs de chaque employé se remplissent automatiquement à partir du dernier mois enregistré. Corrigez si besoin, puis enregistrez tout d’un coup. Pour enlever le salaire d’un employé ce mois-ci, videz sa case « Salaire » : il ne sera pas compté et vous pourrez l’enregistrer normalement plus tard.</p>
     <div class="scroll"><table><thead><tr><th>Employé</th><th class="r">Salaire (KMF)</th><th>Paiement</th><th class="r">Montant versé</th><th class="r">Net à payer</th></tr></thead><tbody>
     ${L.map(e=>{ const v=bv(e,pp); return `<tr><td><b>${h(e.nom)}</b><br><small class="muted">${h(e.poste||'')}</small></td>
-      <td class="r"><input id="qa_s_${e.id}" type="number" inputmode="numeric" min="0" value="${n0(v.salaire)}" style="max-width:130px;text-align:right"></td>
+      <td class="r"><input id="qa_s_${e.id}" type="number" inputmode="numeric" min="0" value="${v.retire?'':n0(v.salaire)}" placeholder="${v.retire?'salaire enlevé':''}" style="max-width:130px;text-align:right"></td>
       <td><select id="qa_st_${e.id}"><option value="paye" ${v.statut==='paye'?'selected':''}>Payé (tout)</option><option value="partiel" ${v.statut==='partiel'?'selected':''}>Payé en partie</option><option value="attente" ${v.statut!=='paye'&&v.statut!=='partiel'?'selected':''}>Impayé</option></select></td>
       <td class="r"><input id="qa_v_${e.id}" type="number" inputmode="numeric" min="0" value="${v.statut==='partiel'?n0(v.verse):''}" placeholder="si en partie" style="max-width:120px;text-align:right"></td>
       <td class="r num">${money(netV(v))}</td></tr>`; }).join('')}
@@ -2942,17 +2948,21 @@ function tousCard(){
 }
 async function saveTous(){
   const L=listePaie(), out=[];
+  let nRet=0;
   for(const e0 of L){
-    const v=bv(e0,pp); v.salaire=n0(val('qa_s_'+e0.id)); v.statut=val('qa_st_'+e0.id)||'attente'; v.verse=n0(val('qa_v_'+e0.id));
+    const v=bvR(e0,pp), sal=n0(val('qa_s_'+e0.id));
+    /* case Salaire vidée : le salaire de ce mois est enlevé (aucune charge), les autres valeurs restent gardées */
+    if(sal<=0){ if(!bv(e0,pp).retire){ out.push({...e0,mois:{...(e0.mois||{}),[pp]:{...v,retire:true,statut:'attente',verse:0,datePaye:''}}}); nRet++; } continue; }
+    v.salaire=sal; v.statut=val('qa_st_'+e0.id)||'attente'; v.verse=n0(val('qa_v_'+e0.id));
     v.datePaye=v.statut==='attente'?'':(v.datePaye||auj());
-    if(v.salaire<=0){ toast('Salaire manquant pour '+e0.nom); return; }
     if(retV(v)>brutV(v)){ toast('Retenues trop élevées pour '+e0.nom); return; }
     if(v.statut==='partiel'&&v.verse<=0){ toast('Indiquez le montant versé pour '+e0.nom); return; }
     if(v.statut==='partiel'&&v.verse>netV(v)){ toast('Montant versé trop élevé pour '+e0.nom); return; }
     fixStatut(v); { const e={...e0,mois:{...(e0.mois||{}),[pp]:v}}; baseDepuis(e,pp,v); out.push(e); }
   }
+  if(nRet&&!await codeSuppr('enlever '+nRet+' salaire(s) de '+moisTxt(pp))) return;
   try{ await putMany('employes',out); await autoSalaires(); }catch(err){ return; }
-  toast(out.length+' bulletin(s) de '+moisTxt(pp)+' enregistré(s)'); render();
+  toast((out.length-nRet)+' bulletin(s) de '+moisTxt(pp)+' enregistré(s)'+(nRet?' – '+nRet+' salaire(s) enlevé(s)':'')); render();
 }
 function rapideCard(){
   const noms=[...new Set(EMP.map(e=>e.nom))];
@@ -2975,7 +2985,7 @@ async function saveRapide(){
   let e=empParNom(nom), nouveau=false;
   if(!e){ nouveau=true; e={id:uid(),num:pad(EMP.reduce((x,y)=>Math.max(x,parseInt(y.num,10)||0),EMP.length)+1,2),nom,poste:'',tel:'',embauche:p+'-01',debut:p,depuis:p,salaire:sal,modePaie:'Espèces',taux:0,mois:{}}; }
   else { e={...e,mois:{...(e.mois||{})}}; if(e.fin&&p>e.fin) delete e.fin; if((e.debut||p)>p){ e.debut=p; } if((e.depuis||p)>p) e.depuis=p; }
-  const v=bv(e,p); v.salaire=sal; v.statut=st; v.verse=n0(val('qr_v')); v.datePaye=st==='attente'?'':auj();
+  const v=bvR(e,p); v.salaire=sal; v.statut=st; v.verse=n0(val('qr_v')); v.datePaye=st==='attente'?'':auj();
   if(st==='partiel'&&v.verse<=0){ toast('Indiquez le montant versé'); return; }
   if(st==='partiel'&&v.verse>netV(v)){ toast('Le montant versé dépasse le net à payer'); return; }
   fixStatut(v);
@@ -2984,6 +2994,20 @@ async function saveRapide(){
   try{ await put('employes',e); await autoSalaires(); }catch(err){ return; }
   pp=p; toast((nouveau?'Nouvel employé créé – ':'')+'bulletin de '+moisTxt(p)+' enregistré ('+(v.statut==='paye'?'payé':v.statut==='partiel'?'payé en partie, reliquat '+money(resteV(v)):'impayé')+')'); render(); voirBulletin(e.id);
 }
+/* Enlever le salaire d'un mois (il sera enregistré normalement plus tard) / le remettre */
+async function enleverSalaire(id){
+  const e0=EMP.find(x=>x.id===id); if(!e0) return;
+  if(!await codeSuppr('enlever le salaire de '+e0.nom+' – '+moisTxt(pp))) return;
+  const e={...e0,mois:{...(e0.mois||{}),[pp]:{...bvR(e0,pp),retire:true,statut:'attente',verse:0,datePaye:''}}};
+  try{ await put('employes',e); await autoSalaires(); }catch(err){ return; }
+  toast('Salaire de '+e0.nom+' enlevé pour '+moisTxt(pp)+' – enregistrez-le normalement à la fin du mois'); render();
+}
+async function remettreSalaire(id){
+  const e0=EMP.find(x=>x.id===id); if(!e0) return;
+  const m={...((e0.mois||{})[pp]||{})}; delete m.retire;
+  try{ await put('employes',{...e0,mois:{...(e0.mois||{}),[pp]:m}}); await autoSalaires(); }catch(err){ return; }
+  toast('Salaire de '+e0.nom+' remis pour '+moisTxt(pp)); render();
+}
 async function marquerPaye(id){
   const e={...EMP.find(x=>x.id===id)}; e.mois={...(e.mois||{}),[pp]:{...bv(e,pp),statut:'paye',datePaye:auj()}};
   try{ await put('employes',e); }catch(err){ return; } toast('Salaire de '+moisTxt(pp)+' marqué payé'); render();
@@ -2991,7 +3015,7 @@ async function marquerPaye(id){
 function tousBulletins(){
   const R=[], now=ymNow();
   EMP.forEach(e=>{ let p=e.debut||e.depuis||now, g=0; const fin=e.fin&&e.fin<now?e.fin:now;
-    while(p<=fin && g++<120){ if(actif(e,p)){ const v=bv(e,p); R.push({e,p,num:'BP-'+p.replace('-','')+'-'+numE(e),net:brutV(v)-retV(v),paid:v.statut==='paye',part:v.statut==='partiel',reste:resteV(v),dp:v.datePaye}); } p=nextYm(p); } });
+    while(p<=fin && g++<120){ if(actif(e,p)&&!bv(e,p).retire){ const v=bv(e,p); R.push({e,p,num:'BP-'+p.replace('-','')+'-'+numE(e),net:brutV(v)-retV(v),paid:v.statut==='paye',part:v.statut==='partiel',reste:resteV(v),dp:v.datePaye}); } p=nextYm(p); } });
   return R.sort((a,b)=>b.p.localeCompare(a.p)||a.e.nom.localeCompare(b.e.nom));
 }
 function rechercheCard(){

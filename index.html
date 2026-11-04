@@ -360,7 +360,7 @@ const IC = {
 const NAV = [['menu','Menu principal','menu'],['home','Accueil','home'],['facture','Facture','fac'],['registre','Registre','reg'],['charges','Charges','chg'],['employes','Employés','emp'],['paie','Paie','pay'],['pdg','PDG','pdg'],['tracto','Tractopelle','trc'],['rapports','Rapports','rap'],['param','Paramètres','par']];
 const svg = k => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${IC[k]}</svg>`;
 let view = 'menu';
-const VERSION_APP='2.0.67';
+const VERSION_APP='2.0.68';
 /* Créateur du logiciel : coordonnées fixes, intégrées au code (identiques dans chaque installation, non modifiables) */
 const CREATEUR={nom:'ALI DAÏM',email:'daim3575@gmail.com',tels:['+269 323 05 70','+269 432 29 14']};
 const waLien=t=>'https://wa.me/'+t.replace(/\D/g,'');
@@ -2071,7 +2071,7 @@ const trDebit=x=>{ const d=trDebitDet(x); return d.ch+d.fx+d.va+d.me; };
 const detDebit=d=>[d.ch?'Chauffeur '+fmt(d.ch):'',d.fx?'Fixes '+fmt(d.fx):'',d.va?'Variables '+fmt(d.va):'',d.me?'Mécanicien '+fmt(d.me):''].filter(Boolean).join(' · ');
 const trChoixTravail=(id,sel)=>`<select id="${id}"><option value="">— Aucun (charge générale) —</option>${trTravaux().sort((a,b)=>b.date.localeCompare(a.date)).slice(0,80).map(t=>`<option value="${t.id}" ${t.id===sel?'selected':''}>${h(t.num)} – ${h(t.client)} – ${dOnly(t.date)}</option>`).join('')}</select>`;
 /* Charges du tractopelle : fixes (assurance, taxes…) et variables (pièces, carburant, achats…) */
-const TR_CAT={fixe:['Assurance','Vignette / taxes','Crédit / location du tractopelle','Gardiennage / parking','Visite technique','Autre charge fixe'],
+const TR_CAT={fixe:['Carburant (gasoil)','Assurance','Vignette / taxes','Crédit / location du tractopelle','Gardiennage / parking','Visite technique','Autre charge fixe'],
   variable:['Pièces détachées','Carburant (gasoil)','Huile / graisse','Pneus','Réparation / main-d’œuvre','Filtres','Achat divers','Transport du tractopelle','Autre charge variable']};
 /* Heures au format HH:MM:SS (avec les secondes), comme 01:00:10 */
 const secondesDe=t=>{ const m=/^(\d{1,2}):(\d{2})(?::(\d{2}))?/.exec(t||''); return m?(+m[1])*3600+(+m[2])*60+(+(m[3]||0)):null; };
@@ -2173,16 +2173,19 @@ async function trEnregModif(id){
 function trModifCharge(id){
   const x=TRC.find(t=>t.id===id); if(!x) return; const ty=x.type==='fixe'?'fixe':'variable';
   modalPdg(`<div class="head" style="margin-bottom:.6rem"><h2 style="margin:0">Modifier la charge ${h(x.num||'')}</h2><button class="btn" onclick="this.closest('.modal').remove()">Fermer</button></div>
-    <div class="row"><label class="f">Date<input id="tcm_d" type="date" value="${locD(x.date).slice(0,10)}"></label><label class="f">Type<select id="tcm_t" onchange="document.getElementById('tcm_c').innerHTML=TR_CAT[this.value].map(c=>'<option>'+c+'</option>').join('')"><option value="variable" ${ty==='variable'?'selected':''}>Charge variable</option><option value="fixe" ${ty==='fixe'?'selected':''}>Charge fixe</option></select></label>
-      <label class="f">Catégorie<select id="tcm_c">${[...new Set([...TR_CAT[ty],x.categorie])].map(c=>`<option ${c===x.categorie?'selected':''}>${h(c)}</option>`).join('')}</select></label></div>
-    <div class="row" style="margin-top:.6rem"><label class="f">Désignation<input id="tcm_l" value="${h(x.libelle||'')}"></label><label class="f">Montant (KMF)<input id="tcm_m" type="number" min="0" value="${n0(x.montant)}"></label><label class="f">Payé par<select id="tcm_p">${MODES.slice(0,6).map(m=>`<option ${m===x.moyen?'selected':''}>${m}</option>`).join('')}</select></label></div>
+    <div class="row"><label class="f">Date<input id="tcm_d" type="date" value="${locD(x.date).slice(0,10)}"></label><label class="f">Type<select id="tcm_t" onchange="document.getElementById('tcm_c').innerHTML=TR_CAT[this.value].map(c=>'<option>'+c+'</option>').join('');trCarb('tcm')"><option value="variable" ${ty==='variable'?'selected':''}>Charge variable</option><option value="fixe" ${ty==='fixe'?'selected':''}>Charge fixe</option></select></label>
+      <label class="f">Catégorie<select id="tcm_c" onchange="trCarb('tcm')">${[...new Set([...TR_CAT[ty],x.categorie])].map(c=>`<option ${c===x.categorie?'selected':''}>${h(c)}</option>`).join('')}</select></label></div>
+    <div class="row" style="margin-top:.6rem"><label class="f">Désignation<input id="tcm_l" value="${h(x.libelle||'')}"></label><label class="f tcm_cb" style="display:none">Litres<input id="tcm_lt" type="number" min="0" step="0.01" value="${x.litres||''}" oninput="trCarb('tcm')"></label><label class="f tcm_cb" style="display:none">Prix unitaire par litre (KMF)<input id="tcm_pl" type="number" min="0" value="${x.prixLitre||n0(TR().prixLitre)||''}" oninput="trCarb('tcm')"></label><label class="f">Montant (KMF)<input id="tcm_m" type="number" min="0" value="${n0(x.montant)}"></label><label class="f">Payé par<select id="tcm_p">${MODES.slice(0,6).map(m=>`<option ${m===x.moyen?'selected':''}>${m}</option>`).join('')}</select></label></div>
     <div class="row" style="margin-top:.6rem"><label class="f">Travail concerné (facultatif)${trChoixTravail('tcm_tv',x.travail||'')}</label></div>
     <div class="btns" style="margin-top:.8rem"><button class="btn pri" onclick="trEnregCharge('${x.id}')">Enregistrer les modifications</button></div>`);
+  trCarb('tcm');
 }
 async function trEnregCharge(id){
-  const x=TRC.find(t=>t.id===id); if(!x) return; const montant=n0(val('tcm_m')); if(montant<=0){ toast('Indiquez le montant'); return; }
+  const x=TRC.find(t=>t.id===id); if(!x) return; const carb=estCarb(val('tcm_c')), litres=carb?Math.round(n0(val('tcm_lt'))*100)/100:0, prixLitre=carb?n0(val('tcm_pl')):0;
+  if(carb&&(litres<=0||prixLitre<=0)){ toast('Indiquez les litres et le prix unitaire par litre'); return; }
+  const montant=carb?Math.round(litres*prixLitre):n0(val('tcm_m')); if(montant<=0){ toast('Indiquez le montant'); return; }
   const d=val('tcm_d')||locD(x.date).slice(0,10);
-  const nx={...x,date:new Date(d+'T12:00:00').toISOString(),type:val('tcm_t')==='fixe'?'fixe':'variable',categorie:val('tcm_c'),libelle:String(val('tcm_l')||'').trim(),montant,moyen:val('tcm_p')||'Espèces',travail:val('tcm_tv')||''};
+  const nx={...x,litres:carb?litres:undefined,prixLitre:carb?prixLitre:undefined,date:new Date(d+'T12:00:00').toISOString(),type:val('tcm_t')==='fixe'?'fixe':'variable',categorie:val('tcm_c'),libelle:String(val('tcm_l')||'').trim(),montant,moyen:val('tcm_p')||'Espèces',travail:val('tcm_tv')||''};
   await put('tracto',nx); journal('Tractopelle : charge modifiée '+(x.num||'')+' '+money(montant)); document.querySelector('.modal')?.remove(); toast('Charge modifiée'); render();
 }
 async function trEncaisser(id){
@@ -2205,7 +2208,7 @@ function trLignes(){ return trTravaux().filter(x=>(!trCh||x.chauffeur===trCh)&&d
 function trLignesCompte(){
   const L=trLignes().map(x=>{ const d=trDebitDet(x); return {k:'t',x,date:x.date,num:x.num,des:x.client+(x.lieu?' – '+x.lieu:''),det:d,deb:d.ch+d.fx+d.va+d.me,cre:trCredit(x)}; });
   if(!trCh) [...trCharges(),...trMecas()].filter(c=>!c.travail&&dansTrP(c.date)).forEach(c=>L.push({k:c.kind,x:c,date:c.date,num:c.num||'—',
-    des:c.kind==='meca'?'Mécanicien '+(c.mecanicien||'')+' – '+(c.travailFait||''):(c.type==='fixe'?'Charge fixe':'Charge variable')+' – '+c.categorie+(c.libelle?' – '+c.libelle:''),
+    des:c.kind==='meca'?'Mécanicien '+(c.mecanicien||'')+' – '+(c.travailFait||''):(c.type==='fixe'?'Charge fixe':'Charge variable')+' – '+c.categorie+(c.libelle?' – '+c.libelle:'')+(c.litres?' – '+carbTxt(c):''),
     det:c.kind==='meca'?{ch:0,fx:0,va:0,me:n0(c.montant)}:{ch:0,fx:c.type==='fixe'?n0(c.montant):0,va:c.type==='fixe'?0:n0(c.montant),me:0},deb:n0(c.montant),cre:0}));
   L.sort((a,b)=>a.date.localeCompare(b.date)); let cum=0; L.forEach(l=>{ l.solde=l.cre-l.deb; cum+=l.solde; l.cum=cum; }); return L;
 }
@@ -2266,24 +2269,36 @@ function trChargesCard(){
     <div class="row">
       <label class="f" style="flex:0 0 auto">Date<input id="trc_d" type="date" value="${auj()}"></label>
       <label class="f" style="flex:0 0 auto">Type<select id="trc_t" onchange="trChType()"><option value="variable">Charge variable</option><option value="fixe">Charge fixe</option></select></label>
-      <label class="f">Catégorie<select id="trc_c">${TR_CAT.variable.map(c=>`<option>${c}</option>`).join('')}</select></label>
-      <label class="f">Désignation (pièce, achat…)<input id="trc_l" placeholder="Ex. : Filtre à huile, 20 L de gasoil"></label>
+      <label class="f">Catégorie<select id="trc_c" onchange="trCarb('trc')">${TR_CAT.variable.map(c=>`<option>${c}</option>`).join('')}</select></label>
+      <label class="f">Désignation (pièce, achat…)<input id="trc_l" placeholder="Ex. : Filtre à huile, station Total"></label>
+      <label class="f trc_cb" style="flex:0 0 120px;display:none">Litres<input id="trc_lt" type="number" inputmode="decimal" min="0" step="0.01" oninput="trCarb('trc')"></label>
+      <label class="f trc_cb" style="flex:0 0 150px;display:none">Prix unitaire par litre (KMF)<input id="trc_pl" type="number" inputmode="numeric" min="0" value="${n0(TR().prixLitre)||''}" oninput="trCarb('trc')"></label>
       <label class="f" style="flex:0 0 140px">Montant (KMF)<input id="trc_m" type="number" inputmode="numeric" min="0"></label>
       <label class="f" style="flex:0 0 auto">Payé par<select id="trc_p">${MODES.slice(0,6).map(x=>`<option>${x}</option>`).join('')}</select></label>
       <label class="f">Travail concerné (facultatif)${trChoixTravail('trc_tv','')}</label>
       <button class="btn pri" style="flex:0 0 auto;align-self:flex-end" onclick="addTrCharge()">Ajouter la charge</button></div>
     <div class="kpis" style="margin:.9rem 0 .6rem"><div class="kpi amber"><small>Charges fixes (dont paie du chauffeur)</small><b class="num">${money(fx)}</b></div><div class="kpi amber"><small>Charges variables (dont mécanicien)</small><b class="num">${money(va)}</b></div><div class="kpi unpaid"><small>Total des charges</small><b class="num">${money(fx+va)}</b></div></div>
     ${L.length?`<div class="scroll"><table><thead><tr><th>Date</th><th>N°</th><th>Type</th><th>Catégorie</th><th>Désignation</th><th>Travail concerné</th><th>Payé par</th><th class="r">Montant</th><th></th></tr></thead><tbody>
-    ${L.map(x=>`<tr${x.auto?' style="background:var(--soft,#f7f8fb)"':''}><td>${dOnly(x.date)}</td><td>${h(x.num||'—')}</td><td>${x.type==='fixe'?'<span class="tag">Fixe</span>':'<span class="tag">Variable</span>'}</td><td>${h(x.categorie)}</td><td>${h(x.libelle||'—')}</td><td>${x.auto==='ch'?h(x.num):h(numTravail(x.travail)||'—')}</td><td>${h(x.moyen||'Espèces')}</td><td class="r num">${money(x.montant)}</td>
+    ${L.map(x=>`<tr${x.auto?' style="background:var(--soft,#f7f8fb)"':''}><td>${dOnly(x.date)}</td><td>${h(x.num||'—')}</td><td>${x.type==='fixe'?'<span class="tag">Fixe</span>':'<span class="tag">Variable</span>'}</td><td>${h(x.categorie)}</td><td>${h(desCh(x))}</td><td>${x.auto==='ch'?h(x.num):h(numTravail(x.travail)||'—')}</td><td>${h(x.moyen||'Espèces')}</td><td class="r num">${money(x.montant)}</td>
       <td>${x.auto==='ch'?'<small class="muted">automatique</small>':x.auto==='me'?'<small class="muted">voir Mécanicien</small>':`<div class="btns" style="flex-wrap:nowrap"><button class="btn sm" onclick="trModifCharge('${x.id}')">Modifier</button><button class="btn sm danger" onclick="trSupprCharge('${x.id}')">Supprimer</button></div>`}</td></tr>`).join('')}
     <tr style="font-weight:700"><td colspan="7">Total</td><td class="r num">${money(fx+va)}</td><td></td></tr></tbody></table></div>`:'<div class="empty">Aucune charge sur cette période.</div>'}</div>`;
 }
-function trChType(){ const t=val('trc_t'), s=document.getElementById('trc_c'); if(s) s.innerHTML=TR_CAT[t==='fixe'?'fixe':'variable'].map(c=>`<option>${c}</option>`).join(''); }
+function trChType(){ const t=val('trc_t'), s=document.getElementById('trc_c'); if(s) s.innerHTML=TR_CAT[t==='fixe'?'fixe':'variable'].map(c=>`<option>${c}</option>`).join(''); trCarb('trc'); }
+/* Carburant : champs « Litres » et « Prix unitaire par litre » ; le montant = litres × prix du litre */
+const estCarb=c=>/^Carburant/.test(c||'');
+function trCarb(p){ const on=estCarb(val(p+'_c')), m=document.getElementById(p+'_m');
+  document.querySelectorAll('.'+p+'_cb').forEach(x=>x.style.display=on?'':'none');
+  if(m){ m.readOnly=on; m.style.background=on?'var(--soft,#f3f5f9)':''; if(on) m.value=Math.round(n0(val(p+'_lt'))*n0(val(p+'_pl')))||''; } }
+const desCh=x=>[x.libelle,carbTxt(x)].filter(Boolean).join(' – ')||'—';
+const carbTxt=x=>x&&x.litres?String(x.litres).replace('.',',')+' L × '+fmt(x.prixLitre)+' KMF/L':'';
 async function addTrCharge(){
-  const d=val('trc_d')||auj(), type=val('trc_t')==='fixe'?'fixe':'variable', categorie=val('trc_c'), libelle=String(val('trc_l')||'').trim(), montant=n0(val('trc_m'));
+  const d=val('trc_d')||auj(), type=val('trc_t')==='fixe'?'fixe':'variable', categorie=val('trc_c'), carb=estCarb(categorie), litres=carb?Math.round(n0(val('trc_lt'))*100)/100:0, prixLitre=carb?n0(val('trc_pl')):0;
+  if(carb&&(litres<=0||prixLitre<=0)){ toast('Indiquez les litres et le prix unitaire par litre'); document.getElementById(litres<=0?'trc_lt':'trc_pl').focus(); return; }
+  const libelle=String(val('trc_l')||'').trim(), montant=carb?Math.round(litres*prixLitre):n0(val('trc_m'));
   if(montant<=0){ toast('Indiquez le montant de la charge'); document.getElementById('trc_m').focus(); return; }
   if(/^Autre/.test(categorie)&&!libelle){ toast('Précisez la désignation'); document.getElementById('trc_l').focus(); return; }
-  const x={id:uid(),kind:'charge',num:nextTr('TPC',d),date:new Date(d+'T12:00:00').toISOString(),type,categorie,libelle,montant,moyen:val('trc_p')||'Espèces',travail:val('trc_tv')||''};
+  if(carb&&prixLitre!==n0(TR().prixLitre)){ S.tracto=Object.assign({},S.tracto||{},{prixLitre}); try{ await saveSettings(); }catch(e){} } /* le dernier prix du litre est proposé la fois suivante */
+  const x={id:uid(),kind:'charge',num:nextTr('TPC',d),date:new Date(d+'T12:00:00').toISOString(),type,categorie,libelle,montant,...(carb?{litres,prixLitre}:{}),moyen:val('trc_p')||'Espèces',travail:val('trc_tv')||''};
   await put('tracto',x); journal('Tractopelle : charge '+type+' '+categorie+(libelle?' – '+libelle:'')+' '+money(montant)); toast('Charge du tractopelle ajoutée'); render();
 }
 async function trSupprCharge(id){
@@ -2294,7 +2309,7 @@ async function trSupprCharge(id){
 function trChargesHTML(){
   const L=trChargesTout(), fx=L.filter(x=>x.type==='fixe').reduce((s,x)=>s+n0(x.montant),0), va=L.filter(x=>x.type!=='fixe').reduce((s,x)=>s+n0(x.montant),0);
   const c='style="padding:5px;border:1px solid #C9D2DE;font-size:10px"', r='style="padding:5px;border:1px solid #C9D2DE;font-size:10px;text-align:right"', th='style="padding:6px 5px;border:1px solid #9CC9D6;font-size:10px;background:#4BACC6;color:#1F3864"';
-  const bloc=(t,lab)=>{ const l=L.filter(x=>(x.type==='fixe')===(t==='fixe')), s=l.reduce((a,x)=>a+n0(x.montant),0); return `<h3 style="margin:12px 0 6px">${lab}</h3><table style="border-collapse:collapse;width:100%"><thead><tr>${['Date','N°','Catégorie','Désignation','Travail concerné','Payé par','Montant'].map(x=>`<th ${th}>${x}</th>`).join('')}</tr></thead><tbody>${l.map(x=>`<tr><td ${c}>${dOnly(x.date)}</td><td ${c}>${h(x.num||'')}</td><td ${c}>${h(x.categorie)}</td><td ${c}>${h(x.libelle||'—')}</td><td ${c}>${x.auto==='ch'?h(x.num):h(numTravail(x.travail)||'—')}</td><td ${c}>${h(x.moyen||'Espèces')}</td><td ${r}>${money(x.montant)}</td></tr>`).join('')||`<tr><td ${c} colspan="7">Aucune</td></tr>`}<tr style="font-weight:700;background:#F3DADA"><td ${c} colspan="6">Total ${lab.toLowerCase()}</td><td ${r}>${money(s)}</td></tr></tbody></table>`; };
+  const bloc=(t,lab)=>{ const l=L.filter(x=>(x.type==='fixe')===(t==='fixe')), s=l.reduce((a,x)=>a+n0(x.montant),0); return `<h3 style="margin:12px 0 6px">${lab}</h3><table style="border-collapse:collapse;width:100%"><thead><tr>${['Date','N°','Catégorie','Désignation','Travail concerné','Payé par','Montant'].map(x=>`<th ${th}>${x}</th>`).join('')}</tr></thead><tbody>${l.map(x=>`<tr><td ${c}>${dOnly(x.date)}</td><td ${c}>${h(x.num||'')}</td><td ${c}>${h(x.categorie)}</td><td ${c}>${h(desCh(x))}</td><td ${c}>${x.auto==='ch'?h(x.num):h(numTravail(x.travail)||'—')}</td><td ${c}>${h(x.moyen||'Espèces')}</td><td ${r}>${money(x.montant)}</td></tr>`).join('')||`<tr><td ${c} colspan="7">Aucune</td></tr>`}<tr style="font-weight:700;background:#F3DADA"><td ${c} colspan="6">Total ${lab.toLowerCase()}</td><td ${r}>${money(s)}</td></tr></tbody></table>`; };
   return `<div class="sheet">${entete('CHARGES DU TRACTOPELLE',titreTrP(),new Date().toISOString())}${bloc('fixe','Charges fixes')}${bloc('variable','Charges variables')}
     <div class="tt" style="margin-top:12px"><div><span>Charges fixes (dont paie du chauffeur)</span><span>${money(fx)}</span></div><div><span>Charges variables (dont mécanicien)</span><span>${money(va)}</span></div><div class="g"><span>Total des charges</span><span>${money(fx+va)}</span></div></div>
     <div class="lettres">Total des charges du tractopelle : <b>${h(enLettres(fx+va))}</b>.</div>

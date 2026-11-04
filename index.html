@@ -149,6 +149,7 @@ td.r,th.r{text-align:right}
 /* Aperçu / impression d'une facture */
 .sheet-wrap{background:#E5E9EF;padding:1rem;border-radius:10px;overflow-x:auto}
 .sheet{background:#fff;color:#16294A;width:100%;max-width:794px;min-width:620px;margin:0 auto;padding:36px 40px;font-size:14px;line-height:1.45;position:relative}
+.sheet.paysage{max-width:1123px}
 .sheet .top{display:flex;justify-content:space-between;gap:1rem;border-bottom:3px solid #16294A;padding-bottom:14px}
 .sheet .co{display:flex;gap:14px;align-items:flex-start}
 .sheet .co img{max-width:170px;max-height:85px;object-fit:contain}
@@ -360,7 +361,7 @@ const IC = {
 const NAV = [['menu','Menu principal','menu'],['home','Accueil','home'],['facture','Facture','fac'],['registre','Registre','reg'],['charges','Charges','chg'],['employes','Employés','emp'],['paie','Paie','pay'],['pdg','PDG','pdg'],['tracto','Tractopelle','trc'],['rapports','Rapports','rap'],['param','Paramètres','par']];
 const svg = k => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${IC[k]}</svg>`;
 let view = 'menu';
-const VERSION_APP='2.0.71';
+const VERSION_APP='2.0.72';
 /* Créateur du logiciel : coordonnées fixes, intégrées au code (identiques dans chaque installation, non modifiables) */
 const CREATEUR={nom:'ALI DAÏM',email:'daim3575@gmail.com',tels:['+269 323 05 70','+269 432 29 14']};
 const waLien=t=>'https://wa.me/'+t.replace(/\D/g,'');
@@ -1205,7 +1206,7 @@ async function imprimerSur(html){
   if(!nom){ toast('Choisissez une imprimante'); return; }
   LS.set('imprimante',nom); document.getElementById('print-area').innerHTML=html;
   toast('Impression en cours sur '+nom+'…');
-  try{ const r=await DESK.imprimer({deviceName:nom,copies,color:couleur,pageSize:/size:\s*A6/i.test(html)?'A6':'A4'});
+  try{ const r=await DESK.imprimer({deviceName:nom,copies,color:couleur,pageSize:/size:\s*A6/i.test(html)?'A6':'A4',landscape:/size:\s*A4\s+landscape/i.test(html)});
     if(r&&r.ok) toast('Envoyé à l’imprimante '+nom+(copies>1?' ('+copies+' copies)':''));
     else toast('Impression impossible : '+(r&&r.err||'erreur')+'. Vérifiez que l’imprimante est allumée et branchée.'); }
   catch(e){ toast('Impression impossible : '+String(e&&e.message||e).slice(0,100)); }
@@ -1294,7 +1295,8 @@ function loadLib(url,ok){
   return new Promise((res,rej)=>{ const s=document.createElement('script'); s.src=url; s.onload=res; s.onerror=()=>rej(new Error('lib')); document.head.appendChild(s); });
 }
 async function exportPDF(html,filename,fmt){
-  html=avecSignatures(html); const A6=fmt==='a6', PW=A6?105:210, PH=A6?148:297, PX=A6?397:794;
+  /* document en format paysage (tableaux du tractopelle) : page A4 couchée */
+  html=avecSignatures(html); const A6=fmt==='a6', PAY=!A6&&/class="sheet paysage/.test(html), PW=A6?105:PAY?297:210, PH=A6?148:PAY?210:297, PX=A6?397:PAY?1123:794;
   toast('Préparation du PDF…');
   try{
     await loadLib('https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js',()=>window.html2canvas);
@@ -1304,7 +1306,7 @@ async function exportPDF(html,filename,fmt){
   host.style.cssText='position:fixed;left:-10000px;top:0;width:'+PX+'px;background:#fff';
   host.innerHTML=html; document.body.appendChild(host);
   try{
-    const pdf=new window.jspdf.jsPDF({unit:'mm',format:A6?'a6':'a4'});
+    const pdf=new window.jspdf.jsPDF({unit:'mm',format:A6?'a6':'a4',orientation:PAY?'landscape':'portrait'});
     const sheets=[...host.querySelectorAll('.sheet')];
     for(let i=0;i<sheets.length;i++){
       sheets[i].style.minWidth='0'; sheets[i].style.width=PX+'px'; sheets[i].style.maxWidth=PX+'px';
@@ -2241,10 +2243,12 @@ function trCompteCard(){
     <div class="kpis" style="margin-top:.8rem"><div class="kpi amber"><small>Paie du chauffeur (fixe)</small><b class="num">${money(T.ch)}</b></div><div class="kpi amber"><small>Autres charges fixes</small><b class="num">${money(T.fx)}</b></div><div class="kpi amber"><small>Charges variables</small><b class="num">${money(T.va)}</b></div><div class="kpi amber"><small>Mécanicien</small><b class="num">${money(T.me)}</b></div><div class="kpi amber"><small>Emprunts du PDG</small><b class="num">${money(T.pdg)}</b></div><div class="kpi paid"><small>Remboursements du PDG</small><b class="num">${money(T.pr)}</b></div><div class="kpi unpaid"><small>Total débit</small><b class="num">${money(T.d)}</b></div><div class="kpi paid"><small>Total crédit</small><b class="num">${money(T.c)}</b></div><div class="kpi ${T.c-T.d>=0?'paid':'unpaid'}"><small>Solde (crédit − débit)</small><b class="num">${money(T.c-T.d)}</b></div></div>`
     :`<div class="empty">Aucun travail ${trP.an?'sur cette période':'pour le moment'}.</div>`}</div>`;
 }
+/* Les tableaux du tractopelle s'impriment et se mettent en PDF en format paysage (A4 couché) */
+const PAYSAGE='<style>@page{size:A4 landscape;margin:8mm}</style>';
 function trCompteHTML(){
   const L=trLignesCompte(), T=trTotCompte(L);
   const c='style="padding:4px 3px;border:1px solid #C9D2DE;font-size:9px"', r='style="padding:4px 3px;border:1px solid #C9D2DE;font-size:9px;text-align:right;white-space:nowrap"', th='style="padding:5px 3px;border:1px solid #9CC9D6;font-size:9px;background:#4BACC6;color:#1F3864;text-align:center"';
-  return `<div class="sheet"><div style="text-align:center">${IMG.logo?`<img src="${IMG.logo}" alt="Logo" style="max-height:70px;max-width:190px">`:''}
+  return `${PAYSAGE}<div class="sheet paysage"><div style="text-align:center">${IMG.logo?`<img src="${IMG.logo}" alt="Logo" style="max-height:70px;max-width:190px">`:''}
     <div style="font-size:18px;font-weight:700;margin:6px 0 2px">Tableau de compte du tractopelle</div><div style="font-size:15px;font-weight:700">${h(titreTrP())}${trCh?' – Chauffeur : '+h(trCh):''}</div>
     <div style="font-size:10px;margin-top:4px">${h(S.nom)} – ${h(S.adresse)}<br>Édité le ${dt(new Date().toISOString())}</div></div>
     <table style="border-collapse:collapse;width:100%;margin-top:10px"><thead><tr>${TR_COLS.map(x=>`<th ${th}>${x}</th>`).join('')}</tr></thead><tbody>
@@ -2314,7 +2318,7 @@ function trChargesHTML(){
   const L=trChargesTout(), fx=L.filter(x=>x.type==='fixe').reduce((s,x)=>s+n0(x.montant),0), va=L.filter(x=>x.type!=='fixe').reduce((s,x)=>s+n0(x.montant),0);
   const c='style="padding:5px;border:1px solid #C9D2DE;font-size:10px"', r='style="padding:5px;border:1px solid #C9D2DE;font-size:10px;text-align:right"', th='style="padding:6px 5px;border:1px solid #9CC9D6;font-size:10px;background:#4BACC6;color:#1F3864"';
   const bloc=(t,lab)=>{ const l=L.filter(x=>(x.type==='fixe')===(t==='fixe')), s=l.reduce((a,x)=>a+n0(x.montant),0); return `<h3 style="margin:12px 0 6px">${lab}</h3><table style="border-collapse:collapse;width:100%"><thead><tr>${['Date','N°','Catégorie','Désignation','Travail concerné','Payé par','Montant'].map(x=>`<th ${th}>${x}</th>`).join('')}</tr></thead><tbody>${l.map(x=>`<tr><td ${c}>${dOnly(x.date)}</td><td ${c}>${h(x.num||'')}</td><td ${c}>${h(x.categorie)}</td><td ${c}>${h(desCh(x))}</td><td ${c}>${x.auto==='ch'?h(x.num):h(numTravail(x.travail)||'—')}</td><td ${c}>${h(x.moyen||'Espèces')}</td><td ${r}>${money(x.montant)}</td></tr>`).join('')||`<tr><td ${c} colspan="7">Aucune</td></tr>`}<tr style="font-weight:700;background:#F3DADA"><td ${c} colspan="6">Total ${lab.toLowerCase()}</td><td ${r}>${money(s)}</td></tr></tbody></table>`; };
-  return `<div class="sheet">${entete('CHARGES DU TRACTOPELLE',titreTrP(),new Date().toISOString())}${bloc('fixe','Charges fixes')}${bloc('variable','Charges variables')}
+  return `${PAYSAGE}<div class="sheet paysage">${entete('CHARGES DU TRACTOPELLE',titreTrP(),new Date().toISOString())}${bloc('fixe','Charges fixes')}${bloc('variable','Charges variables')}
     <div class="tt" style="margin-top:12px"><div><span>Charges fixes (dont paie du chauffeur)</span><span>${money(fx)}</span></div><div><span>Charges variables (dont mécanicien)</span><span>${money(va)}</span></div><div class="g"><span>Total des charges</span><span>${money(fx+va)}</span></div></div>
     <div class="lettres">Total des charges du tractopelle : <b>${h(enLettres(fx+va))}</b>.</div>
     <div class="foot"><div></div>${signes()}</div><div class="bottom">${h(S.nom)} – ${h(S.adresse)}</div></div>`;
@@ -2479,7 +2483,7 @@ function trBulletinCard(){
 function trBulletinHTML(){
   const mo=trBul.mois, L=trTravaux().filter(x=>x.chauffeur===trBul.ch&&locD(x.date).slice(0,7)===mo).sort((a,b)=>a.date.localeCompare(b.date)), hh=L.reduce((s,x)=>s+n0(x.heures),0), tx=tauxDe(trBul.ch), du=L.reduce((s,x)=>s+trPaieCh(x),0), p=TRC.find(x=>x.id===trPaieId(trBul.ch,mo));
   const c='style="padding:5px;border:1px solid #C9D2DE;font-size:10.5px"', r='style="padding:5px;border:1px solid #C9D2DE;font-size:10.5px;text-align:right"';
-  return `<div class="sheet">${entete('BULLETIN DE PAIE – CHAUFFEUR DU TRACTOPELLE','BP-'+mo,new Date().toISOString())}
+  return `${PAYSAGE}<div class="sheet paysage">${entete('BULLETIN DE PAIE – CHAUFFEUR DU TRACTOPELLE','BP-'+mo,new Date().toISOString())}
     <div class="meta"><div class="box"><small>Chauffeur</small><b>${h(trBul.ch)}</b><br>Payé à l’heure</div><div class="box"><small>Période</small><b>${MOIS[+mo.slice(5)-1]} ${mo.slice(0,4)}</b></div><div class="box"><small>Taux horaire</small><b>${money(tx)}</b></div></div>
     <table style="border-collapse:collapse;width:100%;margin:10px 0"><thead><tr>${['Date','N°','Client','Heure d’entrée','Heure de sortie','Déjeuner','Heures','Montant'].map(t=>`<th style="padding:5px;border:1px solid #9CC9D6;font-size:10.5px;background:#4BACC6;color:#1F3864">${t}</th>`).join('')}</tr></thead><tbody>
     ${L.map(x=>`<tr><td ${c}>${dOnly(x.date)}</td><td ${c}>${h(x.num)}</td><td ${c}>${h(x.client)}</td><td ${r}>${hms(x.entree)}</td><td ${r}>${hms(x.sortie)}</td><td ${r}>${x.dej?hms(x.dej):'—'}</td><td ${r}>${fmtHMS(x.heures)}</td><td ${r}>${money(trPaieCh(x))}</td></tr>`).join('')||`<tr><td ${c} colspan="8">Aucun travail ce mois</td></tr>`}
@@ -2537,7 +2541,7 @@ function recuFacPDF(id){ const f=FAC.find(x=>x.id===id); exportPDF(recuFacHTML(f
 let RECU={html:'',file:''};
 function ouvrirRecu(titre,html,file){
   RECU={html,file}; document.querySelectorAll('.modal').forEach(x=>x.remove());
-  modalPdg(`<div class="head" style="margin-bottom:.6rem"><h2 style="margin:0">${titre}</h2><div class="btns"><button class="btn pri" onclick="printHTML(RECU.html)">Imprimer</button><button class="btn" onclick="exportPDF(RECU.html,RECU.file)">Enregistrer en PDF</button><button class="btn" onclick="this.closest('.modal').remove()">Fermer</button></div></div><div class="sheet-wrap">${html}</div>`).querySelector('.in').style.maxWidth='880px';
+  modalPdg(`<div class="head" style="margin-bottom:.6rem"><h2 style="margin:0">${titre}</h2><div class="btns"><button class="btn pri" onclick="printHTML(RECU.html)">Imprimer</button><button class="btn" onclick="exportPDF(RECU.html,RECU.file)">Enregistrer en PDF</button><button class="btn" onclick="this.closest('.modal').remove()">Fermer</button></div></div><div class="sheet-wrap">${html}</div>`).querySelector('.in').style.maxWidth=/class="sheet paysage/.test(html)?'1200px':'880px';
 }
 function voirRecu(id){ const t=PDG.find(x=>x.id===id); if(t) ouvrirRecu('Reçu '+(t.num||''),recuSortieHTML(t),'recu-'+(t.num||t.id)+'.pdf'); }
 function voirRecuRemb(id,rid){ const t=PDG.find(x=>x.id===id), r=t&&(t.rembs||[]).find(x=>x.id===rid); if(r) ouvrirRecu('Reçu '+(r.num||''),recuRembHTML(t,r),'recu-'+(r.num||r.id)+'.pdf'); }

@@ -360,7 +360,7 @@ const IC = {
 const NAV = [['menu','Menu principal','menu'],['home','Accueil','home'],['facture','Facture','fac'],['registre','Registre','reg'],['charges','Charges','chg'],['employes','Employés','emp'],['paie','Paie','pay'],['pdg','PDG','pdg'],['tracto','Tractopelle','trc'],['rapports','Rapports','rap'],['param','Paramètres','par']];
 const svg = k => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${IC[k]}</svg>`;
 let view = 'menu';
-const VERSION_APP='2.0.68';
+const VERSION_APP='2.0.69';
 /* Créateur du logiciel : coordonnées fixes, intégrées au code (identiques dans chaque installation, non modifiables) */
 const CREATEUR={nom:'ALI DAÏM',email:'daim3575@gmail.com',tels:['+269 323 05 70','+269 432 29 14']};
 const waLien=t=>'https://wa.me/'+t.replace(/\D/g,'');
@@ -2068,7 +2068,7 @@ const trLies=x=>[...trCharges(),...trMecas()].filter(c=>c.travail===x.id);
 function trDebitDet(x){ const L=trLies(x), s=f=>L.filter(f).reduce((a,c)=>a+n0(c.montant),0);
   return {ch:trPaieCh(x),fx:s(c=>c.kind==='charge'&&c.type==='fixe'),va:s(c=>c.kind==='charge'&&c.type!=='fixe'),me:s(c=>c.kind==='meca')}; }
 const trDebit=x=>{ const d=trDebitDet(x); return d.ch+d.fx+d.va+d.me; };
-const detDebit=d=>[d.ch?'Chauffeur '+fmt(d.ch):'',d.fx?'Fixes '+fmt(d.fx):'',d.va?'Variables '+fmt(d.va):'',d.me?'Mécanicien '+fmt(d.me):''].filter(Boolean).join(' · ');
+const detDebit=d=>[d.ch?'Chauffeur '+fmt(d.ch):'',d.fx?'Fixes '+fmt(d.fx):'',d.va?'Variables '+fmt(d.va):'',d.me?'Mécanicien '+fmt(d.me):'',d.pdg?'Emprunt du PDG '+fmt(d.pdg):''].filter(Boolean).join(' · ');
 const trChoixTravail=(id,sel)=>`<select id="${id}"><option value="">— Aucun (charge générale) —</option>${trTravaux().sort((a,b)=>b.date.localeCompare(a.date)).slice(0,80).map(t=>`<option value="${t.id}" ${t.id===sel?'selected':''}>${h(t.num)} – ${h(t.client)} – ${dOnly(t.date)}</option>`).join('')}</select>`;
 /* Charges du tractopelle : fixes (assurance, taxes…) et variables (pièces, carburant, achats…) */
 const TR_CAT={fixe:['Carburant (gasoil)','Assurance','Vignette / taxes','Crédit / location du tractopelle','Gardiennage / parking','Visite technique','Autre charge fixe'],
@@ -2121,6 +2121,7 @@ function vTracto(m){
   ${trCompteCard()}
   ${trChargesCard()}
   ${trMecaCard()}
+  ${trPdgCard()}
   ${trBilanCard()}
   ${trBulletinCard()}
   ${trPersonnelCard()}
@@ -2210,10 +2211,11 @@ function trLignesCompte(){
   if(!trCh) [...trCharges(),...trMecas()].filter(c=>!c.travail&&dansTrP(c.date)).forEach(c=>L.push({k:c.kind,x:c,date:c.date,num:c.num||'—',
     des:c.kind==='meca'?'Mécanicien '+(c.mecanicien||'')+' – '+(c.travailFait||''):(c.type==='fixe'?'Charge fixe':'Charge variable')+' – '+c.categorie+(c.libelle?' – '+c.libelle:'')+(c.litres?' – '+carbTxt(c):''),
     det:c.kind==='meca'?{ch:0,fx:0,va:0,me:n0(c.montant)}:{ch:0,fx:c.type==='fixe'?n0(c.montant):0,va:c.type==='fixe'?0:n0(c.montant),me:0},deb:n0(c.montant),cre:0}));
+  if(!trCh) trPdgLignes().forEach(l=>L.push(l));
   L.sort((a,b)=>a.date.localeCompare(b.date)); let cum=0; L.forEach(l=>{ l.solde=l.cre-l.deb; cum+=l.solde; l.cum=cum; }); return L;
 }
 const TR_COLS=['Date / heure','N°','Client / désignation','Chauffeur','Heure d’entrée','Heure de sortie','Déjeuner','Total des heures','Prix unitaire de l’heure','Prix du client','Reste du client','Débit (dépenses)','Crédit (encaissé)','Solde (crédit − débit)','Reçu'];
-function trTotCompte(L){ return L.reduce((a,l)=>({h:a.h+(l.k==='t'?n0(l.x.heures):0),p:a.p+(l.k==='t'?n0(l.x.montant):0),r:a.r+(l.k==='t'?trSolde(l.x):0),d:a.d+l.deb,c:a.c+l.cre,ch:a.ch+l.det.ch,fx:a.fx+l.det.fx,va:a.va+l.det.va,me:a.me+l.det.me}),{h:0,p:0,r:0,d:0,c:0,ch:0,fx:0,va:0,me:0}); }
+function trTotCompte(L){ return L.reduce((a,l)=>({h:a.h+(l.k==='t'?n0(l.x.heures):0),p:a.p+(l.k==='t'?n0(l.x.montant):0),r:a.r+(l.k==='t'?trSolde(l.x):0),d:a.d+l.deb,c:a.c+l.cre,ch:a.ch+l.det.ch,fx:a.fx+l.det.fx,va:a.va+l.det.va,me:a.me+l.det.me,pdg:a.pdg+n0(l.det.pdg),pr:a.pr+(l.k==='pdgr'?l.cre:0)}),{h:0,p:0,r:0,d:0,c:0,ch:0,fx:0,va:0,me:0,pdg:0,pr:0}); }
 function trChoixP(){
   const ans=[...new Set(trTravaux().map(x=>locD(x.date).slice(0,4)))].sort().reverse(); const now=ymNow().slice(0,4); if(!ans.includes(now)) ans.unshift(now);
   return `<div class="row" style="margin-bottom:.8rem">
@@ -2225,16 +2227,16 @@ const sgn=v=>`<span style="color:${v<0?'var(--unpaid)':'var(--paid)'}">${money(v
 function trCompteCard(){
   const L=trLignesCompte(), T=trTotCompte(L);
   return `<div class="card"><div class="head" style="margin-bottom:.4rem"><div><h2 style="margin:0">Tableau de compte du tractopelle – ${h(titreTrP())}</h2>
-      <p class="muted" style="margin:.2rem 0 0"><b>Débit</b> = dépenses : paie du chauffeur (heures × son taux, charge fixe) + charges fixes + charges variables + mécanicien · <b>Crédit</b> = ce que le client a payé · <b>Solde</b> = crédit − débit</p></div>
+      <p class="muted" style="margin:.2rem 0 0"><b>Débit</b> = dépenses : paie du chauffeur (heures × son taux, charge fixe) + charges fixes + charges variables + mécanicien + emprunts du PDG · <b>Crédit</b> = ce que le client a payé + remboursements du PDG · <b>Solde</b> = crédit − débit</p></div>
     <div class="btns"><button class="btn" onclick="printHTML(trCompteHTML())">Imprimer</button><button class="btn" onclick="exportPDF(trCompteHTML(),'tractopelle-compte.pdf')">PDF</button></div></div>
     ${trChoixP()}
     ${L.length?`<div class="scroll"><table class="cpt"><thead><tr>${TR_COLS.map((c,i)=>`<th${i>=4&&i<=13?' class="r"':''}>${c}</th>`).join('')}<th></th></tr></thead><tbody>
     ${L.map(l=>{ const x=l.x; return l.k==='t'?`<tr><td>${dt(x.date)}</td><td>${h(x.num)}</td><td><b>${h(x.client)}</b>${x.lieu?'<br><small class="muted">'+h(x.lieu)+'</small>':''}</td><td>${h(x.chauffeur||'—')}</td><td class="r num">${hms(x.entree)}</td><td class="r num">${hms(x.sortie)}</td><td class="r num">${x.dej?hms(x.dej):'—'}</td><td class="r num">${fmtHMS(x.heures)}</td><td class="r num">${money(x.prix)}</td><td class="r num">${money(x.montant)}</td><td class="r num">${trSolde(x)?money(trSolde(x)):'—'}</td>
       <td class="r num"><b>${money(l.deb)}</b><br><small class="muted">${detDebit(l.det)}</small></td><td class="r num">${money(l.cre)}</td><td class="r num"><b>${sgn(l.solde)}</b></td>
       <td>${trTag(x)}</td><td><div class="btns" style="flex-wrap:nowrap"><button class="btn sm" onclick="trRecu('${x.id}')">Aperçu</button>${trPaye(x)?'':`<button class="btn sm pri" onclick="trEncaisser('${x.id}')">Encaisser</button>`}<button class="btn sm" onclick="trModifier('${x.id}')">Modifier</button><button class="btn sm danger" onclick="trSuppr('${x.id}')">Supprimer</button></div></td></tr>`
-     :`<tr style="background:var(--soft,#f7f8fb)"><td>${dOnly(x.date)}</td><td>${h(l.num)}</td><td colspan="9"><i>${h(l.des)}</i></td><td class="r num"><b>${money(l.deb)}</b></td><td class="r num">—</td><td class="r num"><b>${sgn(l.solde)}</b></td><td>${l.k==='meca'?(x.paye?'<span class="tag paid">Payé</span>':'<span class="tag unpaid">À payer</span>'):'<span class="tag">Charge</span>'}</td><td></td></tr>`; }).join('')}
+     :`<tr style="background:var(--soft,#f7f8fb)"><td>${dOnly(x.date)}</td><td>${h(l.num)}</td><td colspan="9"><i>${h(l.des)}</i></td><td class="r num"><b>${l.deb?money(l.deb):'—'}</b></td><td class="r num">${l.cre?money(l.cre):'—'}</td><td class="r num"><b>${sgn(l.solde)}</b></td><td>${l.k==='meca'?(x.paye?'<span class="tag paid">Payé</span>':'<span class="tag unpaid">À payer</span>'):l.k==='pdg'?tagP(x):l.k==='pdgr'?'<span class="tag paid">Remboursé</span>':'<span class="tag">Charge</span>'}</td><td>${l.k==='pdg'?`<div class="btns" style="flex-wrap:nowrap"><button class="btn sm" onclick="voirRecu('${x.id}')">Reçu</button>${resteP(x)>0?`<button class="btn sm pri" onclick="rembPdg('${x.id}')">Rembourser</button>`:''}</div>`:l.k==='pdgr'?`<button class="btn sm" onclick="${l.r&&l.r.id?`voirRecuRemb('${x.id}','${l.r.id}')`:`voirRecu('${x.id}')`}">Reçu</button>`:''}</td></tr>`; }).join('')}
     <tr style="font-weight:700"><td colspan="7">Total</td><td class="r">${fmtHMS(T.h)}</td><td></td><td class="r num">${money(T.p)}</td><td class="r num">${money(T.r)}</td><td class="r num">${money(T.d)}</td><td class="r num">${money(T.c)}</td><td class="r num">${sgn(T.c-T.d)}</td><td colspan="2"></td></tr></tbody></table></div>
-    <div class="kpis" style="margin-top:.8rem"><div class="kpi amber"><small>Paie du chauffeur (fixe)</small><b class="num">${money(T.ch)}</b></div><div class="kpi amber"><small>Autres charges fixes</small><b class="num">${money(T.fx)}</b></div><div class="kpi amber"><small>Charges variables</small><b class="num">${money(T.va)}</b></div><div class="kpi amber"><small>Mécanicien</small><b class="num">${money(T.me)}</b></div><div class="kpi unpaid"><small>Total débit</small><b class="num">${money(T.d)}</b></div><div class="kpi paid"><small>Total crédit</small><b class="num">${money(T.c)}</b></div><div class="kpi ${T.c-T.d>=0?'paid':'unpaid'}"><small>Solde (crédit − débit)</small><b class="num">${money(T.c-T.d)}</b></div></div>`
+    <div class="kpis" style="margin-top:.8rem"><div class="kpi amber"><small>Paie du chauffeur (fixe)</small><b class="num">${money(T.ch)}</b></div><div class="kpi amber"><small>Autres charges fixes</small><b class="num">${money(T.fx)}</b></div><div class="kpi amber"><small>Charges variables</small><b class="num">${money(T.va)}</b></div><div class="kpi amber"><small>Mécanicien</small><b class="num">${money(T.me)}</b></div><div class="kpi amber"><small>Emprunts du PDG</small><b class="num">${money(T.pdg)}</b></div><div class="kpi paid"><small>Remboursements du PDG</small><b class="num">${money(T.pr)}</b></div><div class="kpi unpaid"><small>Total débit</small><b class="num">${money(T.d)}</b></div><div class="kpi paid"><small>Total crédit</small><b class="num">${money(T.c)}</b></div><div class="kpi ${T.c-T.d>=0?'paid':'unpaid'}"><small>Solde (crédit − débit)</small><b class="num">${money(T.c-T.d)}</b></div></div>`
     :`<div class="empty">Aucun travail ${trP.an?'sur cette période':'pour le moment'}.</div>`}</div>`;
 }
 function trCompteHTML(){
@@ -2245,9 +2247,9 @@ function trCompteHTML(){
     <div style="font-size:10px;margin-top:4px">${h(S.nom)} – ${h(S.adresse)}<br>Édité le ${dt(new Date().toISOString())}</div></div>
     <table style="border-collapse:collapse;width:100%;margin-top:10px"><thead><tr>${TR_COLS.map(x=>`<th ${th}>${x}</th>`).join('')}</tr></thead><tbody>
     ${L.map(l=>{ const x=l.x; return l.k==='t'?`<tr><td ${c}>${dt(x.date)}</td><td ${c}>${h(x.num)}</td><td ${c}>${h(x.client)}${x.lieu?' – '+h(x.lieu):''}</td><td ${c}>${h(x.chauffeur||'—')}</td><td ${r}>${hms(x.entree)}</td><td ${r}>${hms(x.sortie)}</td><td ${r}>${x.dej?hms(x.dej):'—'}</td><td ${r}>${fmtHMS(x.heures)}</td><td ${r}>${fmt(x.prix)}</td><td ${r}>${fmt(x.montant)}</td><td ${r}>${trSolde(x)?fmt(trSolde(x)):'—'}</td><td ${r}><b>${fmt(l.deb)}</b><br>${detDebit(l.det)}</td><td ${r}>${fmt(l.cre)}</td><td ${r}><b>${fmt(l.solde)}</b></td><td ${c}>${trPaye(x)?'Payé':'Impayé'}</td></tr>`
-      :`<tr style="background:#F7F8FB"><td ${c}>${dOnly(x.date)}</td><td ${c}>${h(l.num)}</td><td ${c} colspan="9"><i>${h(l.des)}</i></td><td ${r}><b>${fmt(l.deb)}</b></td><td ${r}>—</td><td ${r}><b>${fmt(l.solde)}</b></td><td ${c}>${l.k==='meca'?(x.paye?'Payé':'À payer'):'Charge'}</td></tr>`; }).join('')||`<tr><td ${c} colspan="15">Aucune opération</td></tr>`}
+      :`<tr style="background:#F7F8FB"><td ${c}>${dOnly(x.date)}</td><td ${c}>${h(l.num)}</td><td ${c} colspan="9"><i>${h(l.des)}</i></td><td ${r}><b>${l.deb?fmt(l.deb):'—'}</b></td><td ${r}>${l.cre?fmt(l.cre):'—'}</td><td ${r}><b>${fmt(l.solde)}</b></td><td ${c}>${l.k==='meca'?(x.paye?'Payé':'À payer'):l.k==='pdg'?(resteP(x)>0?'Reliquat – Impayé':'Payé'):l.k==='pdgr'?'Remboursé':'Charge'}</td></tr>`; }).join('')||`<tr><td ${c} colspan="15">Aucune opération</td></tr>`}
     <tr style="font-weight:700;background:#F3DADA"><td ${c} colspan="7">Total en KMF</td><td ${r}>${fmtHMS(T.h)}</td><td ${c}></td><td ${r}>${money(T.p)}</td><td ${r}>${money(T.r)}</td><td ${r}>${money(T.d)}</td><td ${r}>${money(T.c)}</td><td ${r}>${money(T.c-T.d)}</td><td ${c}></td></tr></tbody></table>
-    <div class="tt" style="max-width:460px;margin:10px 0 0 auto"><div><span>Paie du chauffeur (charge fixe)</span><span>${money(T.ch)}</span></div><div><span>Autres charges fixes</span><span>${money(T.fx)}</span></div><div><span>Charges variables</span><span>${money(T.va)}</span></div><div><span>Mécanicien</span><span>${money(T.me)}</span></div><div><span>Total débit</span><span>${money(T.d)}</span></div><div><span>Total crédit (encaissé)</span><span>${money(T.c)}</span></div><div class="g"><span>Solde (crédit − débit)</span><span>${money(T.c-T.d)}</span></div></div>
+    <div class="tt" style="max-width:460px;margin:10px 0 0 auto"><div><span>Paie du chauffeur (charge fixe)</span><span>${money(T.ch)}</span></div><div><span>Autres charges fixes</span><span>${money(T.fx)}</span></div><div><span>Charges variables</span><span>${money(T.va)}</span></div><div><span>Mécanicien</span><span>${money(T.me)}</span></div><div><span>Emprunts du PDG</span><span>${money(T.pdg)}</span></div><div><span>Remboursements du PDG (crédit)</span><span>${money(T.pr)}</span></div><div><span>Total débit</span><span>${money(T.d)}</span></div><div><span>Total crédit (encaissé)</span><span>${money(T.c)}</span></div><div class="g"><span>Solde (crédit − débit)</span><span>${money(T.c-T.d)}</span></div></div>
     <div class="lettres">${T.c-T.d>=0?'Bénéfice':'Perte'} du tractopelle sur la période : <b>${h(enLettres(Math.abs(T.c-T.d)))}</b> (soit ${eur(Math.abs(T.c-T.d))}).${T.r?'<br><small>Reste à encaisser auprès des clients : '+money(T.r)+'</small>':''}</div>
     <div class="foot"><div></div>${signes()}</div>
     <div class="bottom">${h(S.nom)} – ${h(S.adresse)}</div></div>`;
@@ -2314,6 +2316,40 @@ function trChargesHTML(){
     <div class="tt" style="margin-top:12px"><div><span>Charges fixes (dont paie du chauffeur)</span><span>${money(fx)}</span></div><div><span>Charges variables (dont mécanicien)</span><span>${money(va)}</span></div><div class="g"><span>Total des charges</span><span>${money(fx+va)}</span></div></div>
     <div class="lettres">Total des charges du tractopelle : <b>${h(enLettres(fx+va))}</b>.</div>
     <div class="foot"><div></div>${signes()}</div><div class="bottom">${h(S.nom)} – ${h(S.adresse)}</div></div>`;
+}
+/* Emprunt du PDG dans la caisse du tractopelle : c'est une vraie transaction du compte PDG (partie « Tractopelle »),
+   visible aussi dans la page PDG ; ici elle va au débit du tableau du tractopelle, et ses remboursements au crédit. */
+const PARTIE_TR=()=>PARTIES().find(p=>/tracto/i.test(p))||'Tractopelle';
+const trPdg=()=>PDG.filter(t=>partieDe(t)===PARTIE_TR());
+function trPdgLignes(){ const L=[], z={ch:0,fx:0,va:0,me:0};
+  trPdg().forEach(t=>{
+    if(estApport(t)){ if(dansTrP(t.date)) L.push({k:'pdgr',x:t,r:{id:''},date:t.date,num:t.num||'—',des:'Apport du PDG – '+typeP(t)+(motifP(t)!=='—'?' – '+motifP(t):''),det:{...z,pdg:0},deb:0,cre:n0(t.montant)}); return; }
+    if(dansTrP(t.date)) L.push({k:'pdg',x:t,date:t.date,num:t.num||'—',des:'Emprunt du PDG – '+typeP(t)+' – '+motifP(t)+(t.moyen&&t.moyen!=='Espèces'?' – '+moyenTxt(t):''),det:{...z,pdg:n0(t.montant)},deb:n0(t.montant),cre:0});
+    (t.rembs||[]).filter(r=>dansTrP(r.date)).forEach(r=>L.push({k:'pdgr',x:t,r,date:r.date,num:r.num||'—',des:nomRemb(r)+' du PDG – pour le reçu '+(t.num||'')+(estVir(r)?' – '+moyenTxt(r):''),det:{...z,pdg:0},deb:0,cre:n0(r.montant)})); });
+  return L; }
+function trPdgCard(){
+  const L=trPdg().filter(t=>!estApport(t)&&dansTrP(t.date)).sort((a,b)=>b.date.localeCompare(a.date)), tot=L.reduce((s,t)=>s+n0(t.montant),0), rb=L.reduce((s,t)=>s+rembP(t),0), re=L.reduce((s,t)=>s+resteP(t),0);
+  return `<div class="card"><h2>Emprunt du PDG – caisse du tractopelle</h2>
+    <p class="muted" style="margin-top:0">L’argent que le PDG prend dans la caisse du tractopelle va directement au <b>débit</b> du tableau de compte du tractopelle (et dans le compte du PDG, partie « ${h(PARTIE_TR())} »). Ses remboursements vont au <b>crédit</b>.</p>
+    <div class="row">
+      <label class="f" style="flex:0 0 auto">Date<input id="trp_d" type="date" value="${auj()}"></label>
+      <label class="f" style="flex:0 0 auto">Type<select id="trp_t"><option value="emprunt">Emprunt</option><option value="reliquat">Reliquat</option></select></label>
+      <label class="f" style="flex:0 0 150px">Montant (KMF)<input id="trp_m" type="number" inputmode="numeric" min="0"></label>
+      <label class="f">Motif<select id="trp_mo">${MOTIFS.map(x=>`<option>${x}</option>`).join('')}</select></label>
+      <label class="f">Précision<input id="trp_n" placeholder="Ex. : achat de médicaments"></label>
+      <button class="btn pri" style="flex:0 0 auto;align-self:flex-end" onclick="addTrPdg()">Enregistrer l’emprunt</button></div>
+    <div class="kpis" style="margin:.9rem 0 .6rem"><div class="kpi amber"><small>Emprunté par le PDG</small><b class="num">${money(tot)}</b></div><div class="kpi paid"><small>Remboursé</small><b class="num">${money(rb)}</b></div><div class="kpi unpaid"><small>Reste à rembourser</small><b class="num">${money(re)}</b></div></div>
+    ${L.length?`<div class="scroll"><table><thead><tr><th>Date</th><th>N°</th><th>Type</th><th>Motif</th><th class="r">Montant</th><th class="r">Remboursé</th><th class="r">Reste</th><th>Statut</th><th></th></tr></thead><tbody>
+    ${L.map(t=>`<tr><td>${dOnly(t.date)}</td><td>${h(t.num||'—')}</td><td>${typeP(t)}</td><td>${h(motifP(t))}</td><td class="r num">${money(t.montant)}</td><td class="r num">${money(rembP(t))}</td><td class="r num">${money(resteP(t))}</td><td>${tagP(t)}</td>
+      <td><div class="btns" style="flex-wrap:nowrap"><button class="btn sm" onclick="voirRecu('${t.id}')">Reçu</button>${resteP(t)>0?`<button class="btn sm pri" onclick="rembPdg('${t.id}')">Rembourser</button>`:''}</div></td></tr>`).join('')}</tbody></table></div>`:'<div class="empty">Aucun emprunt du PDG dans la caisse du tractopelle sur cette période.</div>'}</div>`;
+}
+async function addTrPdg(){
+  const d=val('trp_d')||auj(), ty=val('trp_t')==='reliquat'?'reliquat':'emprunt', montant=n0(val('trp_m')), motif=val('trp_mo'), note=String(val('trp_n')||'').trim();
+  if(montant<=0){ toast('Indiquez le montant emprunté'); document.getElementById('trp_m').focus(); return; }
+  if(motif==='Autre'&&!note){ toast('Précisez le motif'); document.getElementById('trp_n').focus(); return; }
+  const id=uid(), partie=PARTIE_TR(); if(!PARTIES().includes(partie)){ S.partiesPdg=[...PARTIES().filter(p=>p!=='Autres'),partie]; try{ await saveSettings(); }catch(e){} }
+  await put('pdg',{id,num:nextRec('REC'),type:ty,partie,date:new Date(d+'T12:00:00').toISOString(),montant,motif,note,moyen:'Espèces',compte:'',rembs:[]});
+  journal('PDG : '+money(montant)+' pris dans la caisse '+partie+' (page Tractopelle)'); toast('Emprunt du PDG enregistré : il apparaît au débit du tableau du tractopelle'); render(); voirRecu(id);
 }
 /* Mécanicien du tractopelle : interventions, paie et reçu de paiement (compté dans les charges variables) */
 function trMecaCard(){
@@ -2395,17 +2431,18 @@ function trBilan(){
   const T=trTravaux().filter(x=>dansTrP(x.date)), enc=T.reduce((s,x)=>s+trCredit(x),0), prix=T.reduce((s,x)=>s+n0(x.montant),0), hh=T.reduce((s,x)=>s+n0(x.heures),0);
   const C=trChL(), sal=T.reduce((s,x)=>s+trPaieCh(x),0), me=trMecas().filter(x=>dansTrP(x.date)).reduce((s,x)=>s+n0(x.montant),0);
   const fx=C.filter(x=>x.type==='fixe').reduce((s,x)=>s+n0(x.montant),0)+sal, va=C.filter(x=>x.type!=='fixe').reduce((s,x)=>s+n0(x.montant),0)+me;
-  return {hh,prix,enc,fx,va,sal,me,res:enc-fx-va};
+  const pe=trPdg().filter(t=>!estApport(t)&&dansTrP(t.date)).reduce((s,t)=>s+n0(t.montant),0), pr=trPdg().flatMap(t=>estApport(t)?[{date:t.date,montant:t.montant}]:(t.rembs||[])).filter(r=>dansTrP(r.date)).reduce((s,r)=>s+n0(r.montant),0);
+  return {hh,prix,enc,fx,va,sal,me,pe,pr,res:enc-fx-va-pe+pr};
 }
 function trBilanCard(){ const b=trBilan();
   return `<div class="card"><div class="head" style="margin-bottom:.4rem"><h2 style="margin:0">Bilan du tractopelle – ${h(titreTrP())}</h2><div class="btns"><button class="btn" onclick="printHTML(trBilanHTML())">Imprimer</button><button class="btn" onclick="exportPDF(trBilanHTML(),'tractopelle-bilan.pdf')">PDF</button></div></div>
-    <p class="muted" style="margin-top:0">Résultat = Encaissé des clients (crédit) − Charges fixes, dont paie du chauffeur − Charges variables, dont mécanicien (débit)</p>
+    <p class="muted" style="margin-top:0">Résultat = Encaissé des clients − Charges fixes (dont paie du chauffeur) − Charges variables (dont mécanicien) − Emprunts du PDG + Remboursements du PDG</p>
     <div class="kpis"><div class="kpi"><small>Heures travaillées</small><b class="num">${fmtH(b.hh)}</b></div><div class="kpi"><small>Prix des clients</small><b class="num">${money(b.prix)}</b></div><div class="kpi paid"><small>Encaissé des clients</small><b class="num">${money(b.enc)}</b></div>
-      <div class="kpi amber"><small>Charges fixes (dont chauffeur ${fmt(b.sal)})</small><b class="num">${money(b.fx)}</b></div><div class="kpi amber"><small>Charges variables (dont mécanicien ${fmt(b.me)})</small><b class="num">${money(b.va)}</b></div>
+      <div class="kpi amber"><small>Charges fixes (dont chauffeur ${fmt(b.sal)})</small><b class="num">${money(b.fx)}</b></div><div class="kpi amber"><small>Charges variables (dont mécanicien ${fmt(b.me)})</small><b class="num">${money(b.va)}</b></div><div class="kpi amber"><small>Emprunts du PDG</small><b class="num">${money(b.pe)}</b></div><div class="kpi paid"><small>Remboursements du PDG</small><b class="num">${money(b.pr)}</b></div>
       <div class="kpi ${b.res>=0?'paid':'unpaid'}"><small>Résultat du tractopelle</small><b class="num">${money(b.res)}</b></div></div></div>`; }
 function trBilanHTML(){ const b=trBilan(), ln=(l,v,g)=>`<div${g?' class="g"':''}><span>${l}</span><span>${v}</span></div>`;
   return `<div class="sheet">${entete('BILAN DU TRACTOPELLE',titreTrP(),new Date().toISOString())}
-    <div class="tt" style="max-width:520px;margin:14px auto">${ln('Heures travaillées',fmtH(b.hh))}${ln('Prix des clients (débit)',money(b.prix))}${ln('Encaissé des clients',money(b.enc))}${ln('− Charges fixes (dont paie du chauffeur '+fmt(b.sal)+')',money(b.fx))}${ln('− Charges variables (dont mécanicien '+fmt(b.me)+')',money(b.va))}${ln('Résultat du tractopelle',money(b.res),1)}</div>
+    <div class="tt" style="max-width:520px;margin:14px auto">${ln('Heures travaillées',fmtH(b.hh))}${ln('Prix des clients (débit)',money(b.prix))}${ln('Encaissé des clients',money(b.enc))}${ln('− Charges fixes (dont paie du chauffeur '+fmt(b.sal)+')',money(b.fx))}${ln('− Charges variables (dont mécanicien '+fmt(b.me)+')',money(b.va))}${ln('− Emprunts du PDG (caisse Tractopelle)',money(b.pe))}${ln('+ Remboursements du PDG',money(b.pr))}${ln('Résultat du tractopelle',money(b.res),1)}</div>
     <div class="lettres">${b.res>=0?'Bénéfice':'Perte'} du tractopelle : <b>${h(enLettres(Math.abs(b.res)))}</b> (soit ${eur(Math.abs(b.res))}).<br><small>Reste à encaisser auprès des clients pour cette période : ${money(Math.max(0,b.prix-trTravaux().filter(x=>dansTrP(x.date)).reduce((s,x)=>s+trCredit(x),0)))}</small></div>
     <div class="foot"><div></div>${signes()}</div><div class="bottom">${h(S.nom)} – ${h(S.adresse)}</div></div>`; }
 /* Reçu / bon de travail du tractopelle */

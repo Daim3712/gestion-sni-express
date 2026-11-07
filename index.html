@@ -361,7 +361,7 @@ const IC = {
 const NAV = [['menu','Menu principal','menu'],['home','Accueil','home'],['facture','Facture','fac'],['registre','Registre','reg'],['charges','Charges','chg'],['employes','Employés','emp'],['paie','Paie','pay'],['pdg','PDG','pdg'],['tracto','Tractopelle','trc'],['rapports','Rapports','rap'],['param','Paramètres','par']];
 const svg = k => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${IC[k]}</svg>`;
 let view = 'menu';
-const VERSION_APP='2.0.74';
+const VERSION_APP='2.0.75';
 /* Créateur du logiciel : coordonnées fixes, intégrées au code (identiques dans chaque installation, non modifiables) */
 const CREATEUR={nom:'ALI DAÏM',email:'daim3575@gmail.com',tels:['+269 323 05 70','+269 432 29 14']};
 const waLien=t=>'https://wa.me/'+t.replace(/\D/g,'');
@@ -898,7 +898,7 @@ function vFacture(m){
     <datalist id="clients">${[...new Set(FAC.map(x=>x.client).filter(Boolean))].map(c=>`<option value="${h(c)}">`).join('')}</datalist>
   </div>
   <div class="card lines"><h2>Désignation</h2>
-    <div class="ln lh"><span>Désignation</span><span>Qté</span><span>Prix unitaire</span><span>Remise (KMF)</span><span class="amt">Montant</span><span></span></div>
+    <div class="ln lh"><span>Désignation</span><span>Qté</span><span>Prix unitaire</span><span>Remise (%)</span><span class="amt">Montant</span><span></span></div>
     <div id="lns"></div>
     <div class="btns"><button class="btn" onclick="draft.lignes.push({d:'',qte:1,pu:'',remise:''});drawLines()">+ Ajouter une ligne</button>
       <button class="btn" onclick="draft.lignes.push({d:'',qte:1,pu:'',remise:'',forfait:true});drawLines();const i=draft.lignes.length-1,x=document.getElementById('d'+i);if(x)x.focus()">+ Ajouter une ligne forfaitaire</button></div>
@@ -940,7 +940,7 @@ function appliquerTarif(l){
   l.pu=q>0?Math.round(n0(t.prix)*q):'';
   if(l.dAuto!==false){ l.d=t.nom+(md==='unite'||q<=0?'':' – '+mesureTxt(l,t)); l.dAuto=true; }
 }
-const ligneOut=l=>({d:l.d,qte:l.forfait?1:n0(l.qte),pu:n0(l.pu),remise:n0(l.remise),...(l.forfait?{forfait:true}:{}),...(l.tarif&&!l.forfait?{tarif:l.tarif,lg:n0(l.lg),ht:n0(l.ht)}:{})});
+const ligneOut=l=>(syncRem(l),{d:l.d,qte:l.forfait?1:n0(l.qte),pu:n0(l.pu),remise:n0(l.remise),...(remPct(l)?{pct:remPct(l)}:{}),...(l.forfait?{forfait:true}:{}),...(l.tarif&&!l.forfait?{tarif:l.tarif,lg:n0(l.lg),ht:n0(l.ht)}:{})});
 /* Ligne forfaitaire : le prix tapé est le montant total de la ligne (quantité 1, pas de calcul au m²) */
 function setForfait(i,on){
   const l=draft.lignes[i];
@@ -994,7 +994,7 @@ function drawLines(){
     <input class="d" id="d${i}" aria-label="Désignation" placeholder="Ex. : Impression Autocollant 0.00*0.00" title="Écrivez l’élément puis la mesure en mètres (longueur*hauteur), ex. Impression Autocollant 1.50*0.50 : le prix unitaire se calcule tout seul" value="${h(l.d)}" oninput="majDesignation(${i},this.value)">
     <input aria-label="Quantité" placeholder="Qté" type="${l.forfait?'text':'number'}" inputmode="decimal" min="0" value="${l.forfait?'Forfait':h(l.qte)}" ${l.forfait?'readonly title="Ligne forfaitaire : quantité 1"':''} oninput="draft.lignes[${i}].qte=this.value;upd(${i})">
     <input id="pu${i}" aria-label="${l.forfait?'Montant du forfait':'Prix unitaire'}" placeholder="${l.forfait?'Montant forfait':'Prix unitaire'}" type="number" inputmode="numeric" min="0" value="${h(l.pu)}" ${t?'readonly style="background:var(--cyan-soft)"':''} oninput="draft.lignes[${i}].pu=this.value;draft.lignes[${i}].puAuto=false;upd(${i})">
-    <input aria-label="Remise" placeholder="Remise" type="number" inputmode="numeric" min="0" value="${h(l.remise)}" oninput="draft.lignes[${i}].remise=this.value;upd(${i})">
+    <input aria-label="Remise en %" title="Remise en pourcentage" placeholder="0 %" type="number" inputmode="decimal" min="0" max="100" step="any" value="${h(remPct(l))}" oninput="draft.lignes[${i}].pct=this.value;upd(${i})">
     <span class="amt num" id="a${i}">${money(n0(l.qte)*n0(l.pu)-n0(l.remise))}</span>
     <button class="x" aria-label="Supprimer la ligne" onclick="draft.lignes.splice(${i},1);if(!draft.lignes.length)draft.lignes.push({d:'',qte:1,pu:'',remise:''});drawLines()">×</button></div>
     <div class="ln-i"><label style="display:inline-flex;align-items:center;gap:.35rem;margin-right:.8rem;font-weight:600;cursor:pointer"><input type="checkbox" ${l.forfait?'checked':''} onchange="setForfait(${i},this.checked)" style="width:auto;margin:0"> Forfait</label><span id="ti${i}">${l.forfait?'<span class="muted">Ligne forfaitaire : le prix tapé est le montant total de la ligne.</span>':infoTarif(l)}</span></div></div>`; }).join('');
@@ -1025,13 +1025,22 @@ async function enregistrerTarifs(){
   S.tarifs=L; try{ await saveSettings(); journal('Tarifs des impressions enregistrés ('+L.length+')'); toast('Tarifs enregistrés : '+L.filter(t=>n0(t.prix)>0).length+' tarif(s) avec un prix'); }catch(e){ toast('Échec de l’enregistrement'); } render();
 }
 function ouvrirTarifs(){ go('param'); setTimeout(()=>{ const c=document.getElementById('tarifsCard'); if(c) c.scrollIntoView({block:'start'}); },60); }
-function upd(i){ const l=draft.lignes[i]; document.getElementById('a'+i).textContent=money(n0(l.qte)*n0(l.pu)-n0(l.remise)); drawTotals(); }
+/* Remise en pourcentage (0 % par défaut) : le montant de la remise (l.remise, en KMF) est calculé à partir du % de la ligne ;
+   une ancienne facture sans % retrouve son pourcentage à partir du montant */
+const remPct=l=>{ if(l.pct!=null&&l.pct!=='') return n0(l.pct); const b=n0(l.qte)*n0(l.pu); return b>0?Math.round(n0(l.remise)/b*10000)/100:0; };
+const syncRem=l=>{ if(l.pct!=null&&l.pct!=='') l.remise=Math.round(n0(l.qte)*n0(l.pu)*n0(l.pct)/100); else if(l.pct==='') l.remise=0; };
+const pctTxt=p=>String(Math.round(n0(p)*100)/100).replace('.',',')+' %';
+const remTot=t=>t.brut>0?Math.round(t.rem/t.brut*10000)/100:0;
+const remTotTxt=t=>pctTxt(remTot(t))+(t.rem?' ('+money(t.rem)+')':'');
+const remLigneTxt=l=>n0(l.remise)?pctTxt(remPct(l))+'<br><small>'+fmt(l.remise)+'</small>':'0 %';
+function upd(i){ const l=draft.lignes[i]; syncRem(l); document.getElementById('a'+i).textContent=money(n0(l.qte)*n0(l.pu)-n0(l.remise)); drawTotals(); }
 function drawTotals(){
+  (draft.lignes||[]).forEach(syncRem);
   const t=calc(draft), el=document.getElementById('tot'); if(!el) return;
   el.innerHTML=`<div class="totals">
     ${t.encre?`<div><span>dont consommation encre</span><b class="num">${money(t.encre)}</b></div>`:''}
     <div><span>Total</span><b class="num">${money(t.brut)}</b></div>
-    <div><span>Remise</span><b class="num">− ${money(t.rem)}</b></div>
+    <div><span>Remise (${pctTxt(remTot(t))})</span><b class="num">− ${money(t.rem)}</b></div>
     <div><span>Total HT</span><b class="num">${money(t.ht)}</b></div>
     <div><span>TVA (${n0(draft.tva)} %)</span><b class="num">${money(t.tva)}</b></div>
     <div class="big"><span>Total TTC</span><b class="num">${money(t.ttc)}</b></div></div>
@@ -1066,8 +1075,8 @@ function erreursFacture(f){
     const tf=tarifDe(l), sansMesure=tf&&((modeL(l,tf)==='m2'&&(n0(l.lg)<=0||n0(l.ht)<=0))||(tf.mode==='ml'&&n0(l.lg)<=0));
     if(sansMesure) e.push(k+(tf.mode==='m2'?'ajoutez la mesure en mètres dans la désignation, ex. « Impression '+tf.nom+' 0.00*0.00 ».':'ajoutez la longueur en mètres dans la désignation, ex. « '+tf.nom+' 12.5 m ».'));
     else if(n0(l.pu)<=0) e.push(k+'le prix unitaire doit être supérieur à 0.');
-    if(n0(l.remise)<0) e.push(k+'la remise ne peut pas être négative.');
-    if(n0(l.remise)>n0(l.qte)*n0(l.pu)) e.push(k+'la remise dépasse le montant de la ligne.');
+    if(remPct(l)<0||n0(l.remise)<0) e.push(k+'la remise ne peut pas être négative.');
+    if(remPct(l)>100||n0(l.remise)>n0(l.qte)*n0(l.pu)) e.push(k+'la remise ne peut pas dépasser 100 %.');
   });
   if(n0(f.tva)<0||n0(f.tva)>100) e.push('La TVA doit être comprise entre 0 et 100 %.');
   if(n0(f.encre)<0) e.push('La consommation d’encre ne peut pas être négative.');
@@ -1136,13 +1145,13 @@ function sheetHTML(f){
       <tr><td><b>Contact client :</b> ${h(f.clientTel||'')}</td><td class="d">à ${fd.heure}</td></tr>
       ${f.objet?`<tr><td colspan="2"><b>Objet :</b> ${h(f.objet)}</td></tr>`:''}
       ${f.ref?`<tr><td colspan="2"><b>Réf. proforma :</b> ${h(f.ref)}</td></tr>`:''}</table>
-    <table class="fx-t"><thead><tr><th style="width:60px">Qté</th><th>Désignation</th><th style="width:110px">Prix UTE</th>${rem?'<th style="width:90px">Remise</th>':''}<th style="width:110px">Total HT</th></tr></thead><tbody>
-    ${rows.map(l=>`<tr><td style="text-align:center">${l.d||l.pu?qteTxt(l):''}</td><td>${h(l.d)||'&nbsp;'}</td><td style="text-align:right">${l.pu?fmt(l.pu):''}</td>${rem?`<td style="text-align:right">${n0(l.remise)?fmt(l.remise):'—'}</td>`:''}<td style="text-align:right">${l.pu?fmt(n0(l.qte)*n0(l.pu)-n0(l.remise)):''}</td></tr>`).join('')}
+    <table class="fx-t"><thead><tr><th style="width:60px">Qté</th><th>Désignation</th><th style="width:110px">Prix UTE</th>${rem?'<th style="width:90px">Remise (%)</th>':''}<th style="width:110px">Total HT</th></tr></thead><tbody>
+    ${rows.map(l=>`<tr><td style="text-align:center">${l.d||l.pu?qteTxt(l):''}</td><td>${h(l.d)||'&nbsp;'}</td><td style="text-align:right">${l.pu?fmt(l.pu):''}</td>${rem?`<td style="text-align:right">${l.d||l.pu?remLigneTxt(l):''}</td>`:''}<td style="text-align:right">${l.pu?fmt(n0(l.qte)*n0(l.pu)-n0(l.remise)):''}</td></tr>`).join('')}
     </tbody></table>
     <div class="fx-bas"><div class="fx-qs"><div class="fx-qr">${qrHTML(qrFactureTexte(f))}</div>
       <div class="fx-paye ${paid?'paid':'unpaid'}">${paid?'Payé':'Impayé'}</div></div>
       <div><table class="fx-tot">
-      <tr><td>Total Brut</td><td>${money(t.brut)}</td></tr><tr><td>Remise</td><td>${money(t.rem)}</td></tr>
+      <tr><td>Total Brut</td><td>${money(t.brut)}</td></tr><tr><td>Remise</td><td>${remTotTxt(t)}</td></tr>
       <tr><td>Total net HT</td><td>${money(t.ht)}</td></tr><tr><td>TVA ${n0(f.tva)} %</td><td>${money(t.tva)}</td></tr>
       <tr class="g"><td>Net à payer</td><td>${money(t.ttc)}</td></tr></table>
       <div class="fx-eur">soit ${eur(t.ttc)} (1 € = 491,96775 KMF)</div></div></div>
@@ -1337,13 +1346,13 @@ function factureWord(id){
     <tr><td ${k}>${h(f.client)||'&nbsp;'}</td><td ${k}>${fd.date}</td></tr>
     <tr><td ${k}><b>Contact client :</b> ${h(f.clientTel||'')}</td><td ${k}>à ${fd.heure}</td></tr>
     ${f.objet?`<tr><td ${k} colspan="2"><b>Objet :</b> ${h(f.objet)}</td></tr>`:''}${f.ref?`<tr><td ${k} colspan="2"><b>Réf. proforma :</b> ${h(f.ref)}</td></tr>`:''}</table><br>
-  <table style="width:100%;border-collapse:collapse"><tr><th ${bh}>Qté</th><th ${bh}>Désignation</th><th ${bh}>Prix UTE</th>${f.lignes.some(l=>n0(l.remise))?`<th ${bh}>Remise</th>`:''}<th ${bh}>Total HT</th></tr>
-  ${lignesFacture(f).map(l=>`<tr><td ${bl} align="center">${qteTxt(l)}</td><td ${bl}>${h(l.d)}</td><td ${blr}>${fmt(l.pu)}</td>${f.lignes.some(x=>n0(x.remise))?`<td ${blr}>${n0(l.remise)?fmt(l.remise):'—'}</td>`:''}<td ${blr}>${fmt(n0(l.qte)*n0(l.pu)-n0(l.remise))}</td></tr>`).join('')}</table><br>
+  <table style="width:100%;border-collapse:collapse"><tr><th ${bh}>Qté</th><th ${bh}>Désignation</th><th ${bh}>Prix UTE</th>${f.lignes.some(l=>n0(l.remise))?`<th ${bh}>Remise (%)</th>`:''}<th ${bh}>Total HT</th></tr>
+  ${lignesFacture(f).map(l=>`<tr><td ${bl} align="center">${qteTxt(l)}</td><td ${bl}>${h(l.d)}</td><td ${blr}>${fmt(l.pu)}</td>${f.lignes.some(x=>n0(x.remise))?`<td ${blr}>${remLigneTxt(l)}</td>`:''}<td ${blr}>${fmt(n0(l.qte)*n0(l.pu)-n0(l.remise))}</td></tr>`).join('')}</table><br>
   <table style="width:100%;border-collapse:collapse"><tr><td style="vertical-align:middle">
     ${qrFactureSrc(f)?`<img src="${qrFactureSrc(f)}" width="100" height="100">`:''}
     <span style="font-family:'Segoe Script','Brush Script MT',cursive;font-size:22pt;font-weight:bold;color:${paid?'#E30613':'#7B1F1F'}">&nbsp;&nbsp;${paid?'Payé':'Impayé'}</span></td>
     <td style="width:45%;vertical-align:top"><table style="width:100%;border-collapse:collapse">
-    ${tr('Total Brut',money(t.brut),0)}${tr('Remise',money(t.rem),1)}${tr('Total net HT',money(t.ht),2)}${tr('TVA '+n0(f.tva)+' %',money(t.tva),3)}${tr('Net à payer',money(t.ttc),4,true)}</table>
+    ${tr('Total Brut',money(t.brut),0)}${tr('Remise',remTotTxt(t),1)}${tr('Total net HT',money(t.ht),2)}${tr('TVA '+n0(f.tva)+' %',money(t.tva),3)}${tr('Net à payer',money(t.ttc),4,true)}</table>
     <p align="right" style="font-size:8pt;color:#555;margin:2pt 0">soit ${eur(t.ttc)} (1 € = 491,96775 KMF)</p></td></tr></table>
   <p style="font-size:12pt">Arrêtée la présente facture à la somme de : <b>${h(enLettres(t.ttc))}</b></p>
   <table style="width:100%;border-collapse:collapse"><tr><td style="vertical-align:top"><table style="border-collapse:collapse"><tr><td style="border:1px solid #E30613;padding:3pt 10pt;font-size:9.5pt">Mode de paiement</td><td style="border:1px solid #E30613;padding:3pt 10pt;font-weight:bold;min-width:90pt">${h(f.modePaie||(paid?'Espèces':''))||'&nbsp;'}</td></tr></table></td>
@@ -1356,9 +1365,9 @@ async function factureExcel(id){
   const f=getF(id), t=calc(f);
   try{ await loadLib(XLSX_URL,()=>window.XLSX); }catch(e){ toast('Connexion nécessaire pour créer le fichier Excel'); return; }
   const rows=[[S.nom],[S.adresse],[],[f.type==='D'?'FACTURE DÉFINITIVE':'FACTURE PROFORMA'],['N°',f.num],['Date',dt(f.date)],['Client',f.client],['Contact',f.clientTel||''],['Objet',f.objet||''],[],
-    ['Désignation','Qté','Prix unitaire','Remise','Montant']];
-  lignesFacture(f).forEach(l=>rows.push([l.d,l.forfait?'Forfait':n0(l.qte),n0(l.pu),n0(l.remise),n0(l.qte)*n0(l.pu)-n0(l.remise)]));
-  const e2=v=>Math.round(n0(v)/TAUX_EUR*100)/100; rows.push([],['','','','','En KMF','En euros'],['','','','Total brut',t.brut,e2(t.brut)],['','','','Remise',t.rem,e2(t.rem)],['','','','Total net HT',t.ht,e2(t.ht)],['','','','TVA '+f.tva+' %',t.tva,e2(t.tva)],['','','','Net à payer',t.ttc,e2(t.ttc)],['','','','Taux fixe','1 € = 491,96775 KMF'],[],
+    ['Désignation','Qté','Prix unitaire','Remise (%)','Montant']];
+  lignesFacture(f).forEach(l=>rows.push([l.d,l.forfait?'Forfait':n0(l.qte),n0(l.pu),pctTxt(remPct(l)),n0(l.qte)*n0(l.pu)-n0(l.remise)]));
+  const e2=v=>Math.round(n0(v)/TAUX_EUR*100)/100; rows.push([],['','','','','En KMF','En euros'],['','','','Total brut',t.brut,e2(t.brut)],['','','','Remise ('+pctTxt(remTot(t))+')',t.rem,e2(t.rem)],['','','','Total net HT',t.ht,e2(t.ht)],['','','','TVA '+f.tva+' %',t.tva,e2(t.tva)],['','','','Net à payer',t.ttc,e2(t.ttc)],['','','','Taux fixe','1 € = 491,96775 KMF'],[],
     ['Montant en lettres',enLettres(t.ttc)],['Statut',isPaid(f)?'PAYÉ':'IMPAYÉ'],['Responsable',S.responsable||'']);
   const ws=XLSX.utils.aoa_to_sheet(rows); ws['!cols']=[{wch:40},{wch:8},{wch:14},{wch:14},{wch:16},{wch:14}];
   const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,ws,'Facture');

@@ -361,7 +361,7 @@ const IC = {
 const NAV = [['menu','Menu principal','menu'],['home','Accueil','home'],['facture','Facture','fac'],['registre','Registre','reg'],['charges','Charges','chg'],['employes','Employés','emp'],['paie','Paie','pay'],['pdg','PDG','pdg'],['tracto','Tractopelle','trc'],['rapports','Rapports','rap'],['param','Paramètres','par']];
 const svg = k => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${IC[k]}</svg>`;
 let view = 'menu';
-const VERSION_APP='2.0.77';
+const VERSION_APP='2.0.78';
 /* Créateur du logiciel : coordonnées fixes, intégrées au code (identiques dans chaque installation, non modifiables) */
 const CREATEUR={nom:'ALI DAÏM',email:'daim3575@gmail.com',tels:['+269 323 05 70','+269 432 29 14']};
 const waLien=t=>'https://wa.me/'+t.replace(/\D/g,'');
@@ -925,7 +925,9 @@ function vFacture(m){
   <div class="card"><div class="row">
     <label class="f">N° de facture<input id="f_num" value="${h(num)}" readonly></label>
     <label class="f">Date et heure de la facture<input type="datetime-local" value="${versSaisie(dateFacture(f))}" onchange="saisirDate(this.value)"></label>
-    <label class="f">Statut<input value="${f.type==='D'?'Payé':'Impayé'}" readonly style="color:${f.type==='D'?'var(--paid)':'var(--unpaid)'};font-weight:700"></label>
+    <label class="f">Statut<select id="f_statut" ${editing&&!f.autoNum?'disabled':''} onchange="draft.type=this.value==='paye'?'D':'P';render()" style="color:${f.type==='D'?'var(--paid)':'var(--unpaid)'};font-weight:700">
+      <option value="impaye" ${f.type!=='D'?'selected':''} style="color:var(--unpaid)">Impayé (proforma)</option>
+      <option value="paye" ${f.type==='D'?'selected':''} style="color:var(--paid)">Payé (définitive)</option></select></label>
   </div></div>
   <div class="card"><div class="row">
     <label class="f">Client<input id="cl" list="clients" value="${h(f.client)}" oninput="draft.client=this.value" placeholder="Nom du client"></label>

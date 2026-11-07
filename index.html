@@ -361,7 +361,7 @@ const IC = {
 const NAV = [['menu','Menu principal','menu'],['home','Accueil','home'],['facture','Facture','fac'],['registre','Registre','reg'],['charges','Charges','chg'],['employes','Employés','emp'],['paie','Paie','pay'],['pdg','PDG','pdg'],['tracto','Tractopelle','trc'],['rapports','Rapports','rap'],['param','Paramètres','par']];
 const svg = k => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${IC[k]}</svg>`;
 let view = 'menu';
-const VERSION_APP='2.0.76';
+const VERSION_APP='2.0.77';
 /* Créateur du logiciel : coordonnées fixes, intégrées au code (identiques dans chaque installation, non modifiables) */
 const CREATEUR={nom:'ALI DAÏM',email:'daim3575@gmail.com',tels:['+269 323 05 70','+269 432 29 14']};
 const waLien=t=>'https://wa.me/'+t.replace(/\D/g,'');
@@ -613,18 +613,18 @@ async function put(coll,obj){
   obj.maj=new Date().toISOString(); /* heure de modification : sert à la synchronisation PC ↔ téléphone */
   const arr=LISTS[coll](); const i=arr.findIndex(x=>x.id===obj.id); if(i>=0) arr[i]=obj; else arr.push(obj);
   if(MODE==='db'){ try{ await BASE.collection(coll).doc(obj.id).set(obj); }catch(e){ toast("Échec de l'enregistrement : "+(e.message||e.code)); throw e; } }
-  else LS.set(coll,arr);
+  else { LS.set(coll,arr); marquerModif(); }
 }
 async function del(coll,id){
   const arr=LISTS[coll](); const i=arr.findIndex(x=>x.id===id); if(i>=0) arr.splice(i,1);
   marquerSuppr(coll,id);
   if(MODE==='db'){ try{ await BASE.collection(coll).doc(id).delete(); }catch(e){ toast('Échec de la suppression'); } }
-  else LS.set(coll,arr);
+  else { LS.set(coll,arr); marquerModif(); }
 }
 async function saveSettings(){
   S.majS=new Date().toISOString();
   if(MODE==='db'){ await BASE.set(S); await DB.doc('data/users/'+UIDV+'/images').set(IMG); }
-  else { LS.set('settings',S); LS.set('images',IMG); }
+  else { LS.set('settings',S); LS.set('images',IMG); marquerModif(); }
 }
 
 /* ============ Synchronisation PC ↔ téléphone par le Wi-Fi ============
@@ -632,7 +632,13 @@ async function saveSettings(){
    les suppressions sont transmises ; les réglages (tarifs, comptes, parties…) suivent la version la plus récente. */
 const COLLS_SYNC=['factures','charges','employes','pdg','tracto'];
 function marquerSuppr(coll,id){ const s=LS.get('supprimes',{}); (s[coll]=s[coll]||{})[id]=new Date().toISOString(); LS.set('supprimes',s); }
-function paquetSync(){ return {app:'sni',v:1,version:VERSION_APP,date:new Date().toISOString(),colls:{factures:FAC,charges:CHG,employes:EMP,pdg:PDG,tracto:TRC},supprimes:LS.get('supprimes',{}),settings:S,images:IMG}; }
+/* Marque de modification : change à chaque enregistrement, pour savoir en un instant si l'autre appareil a du nouveau */
+let syncBientot=null;
+function marquerModif(){
+  LS.set('rev',new Date().toISOString()+'-'+Math.random().toString(36).slice(2,7));
+  if(typeof NATIF!=='undefined'&&NATIF&&LS.get('syncPC',null)){ clearTimeout(syncBientot); syncBientot=setTimeout(()=>syncAvecPC(),1200); }
+}
+function paquetSync(){ return {app:'sni',v:1,rev:LS.get('rev',''),version:VERSION_APP,date:new Date().toISOString(),colls:{factures:FAC,charges:CHG,employes:EMP,pdg:PDG,tracto:TRC},supprimes:LS.get('supprimes',{}),settings:S,images:IMG}; }
 function fusionner(rem){
   if(!rem||rem.app!=='sni'||!rem.colls) throw new Error('données de synchronisation invalides');
   const sl=LS.get('supprimes',{}), sr=rem.supprimes||{}, sup={}, n={recus:0,supprimes:0};
@@ -647,8 +653,9 @@ function fusionner(rem){
     LS.set(c,L);
   }
   LS.set('supprimes',sup);
-  if(rem.settings&&String(rem.settings.majS||'')>String(S.majS||'')){ S=Object.assign(S,rem.settings); LS.set('settings',S); if(rem.images){ IMG=Object.assign(IMG,rem.images); LS.set('images',IMG); } }
-  doublonsNumeros();
+  if(rem.settings&&String(rem.settings.majS||'')>String(S.majS||'')){ S=Object.assign(S,rem.settings); LS.set('settings',S); if(rem.images){ IMG=Object.assign(IMG,rem.images); LS.set('images',IMG); } n.reglages=1; }
+  if(doublonsNumeros()) n.numeros=1;
+  if(n.recus||n.supprimes||n.reglages||n.numeros) LS.set('rev',new Date().toISOString()+'-'+Math.random().toString(36).slice(2,7));
   return n;
 }
 /* Deux appareils peuvent avoir donné le même numéro à deux factures différentes : la plus récente reçoit un nouveau numéro */
@@ -658,32 +665,62 @@ function doublonsNumeros(){
   const vus={}, chg=[];
   [...FAC].sort((a,b)=>String(a.date).localeCompare(String(b.date))||String(a.maj||'').localeCompare(String(b.maj||''))).forEach(f=>{ if(vus[cle(f)]&&vus[cle(f)]!==f.id){ f.num=nextNum(f.type,f.date,f.id); chg.push(f); } vus[cle(f)]=f.id; });
   if(chg.length){ chg.forEach(f=>f.maj=new Date().toISOString()); LS.set('factures',FAC); journal('Synchronisation : numéro changé pour '+chg.map(f=>f.num+' ('+f.client+')').join(', ')); }
+  return chg.length;
 }
-const majApresSync=()=>{ if(!LOCKED&&view!=='facture'&&!document.querySelector('.modal')) render(); };
+/* Rafraîchit l'écran après une synchronisation, sans gêner une saisie en cours (on attend que la case soit quittée) */
+let syncAffichage=false;
+const saisieEnCours=()=>{ const a=document.activeElement; return !!(a&&/^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName)); };
+const majApresSync=n=>{
+  if(n&&!(n.recus||n.supprimes||n.reglages||n.numeros)) return;
+  if(LOCKED||view==='facture'||document.querySelector('.modal')||saisieEnCours()){ syncAffichage=true; return; }
+  syncAffichage=false; render();
+};
+document.addEventListener('focusout',()=>setTimeout(()=>{ if(syncAffichage) majApresSync(); },300));
 /* Côté PC : appelé par le petit serveur du logiciel Windows quand le téléphone se synchronise */
 window.syncFusion=function(rem){
   if(!DEMARRE||MODE!=='local') return null;
-  const n=fusionner(rem); LS.set('derniereSyncPC',{date:new Date().toISOString(),...n}); majApresSync();
+  const n=fusionner(rem); LS.set('derniereSyncPC',{date:new Date().toISOString(),...n}); majApresSync(n);
   if(n.recus||n.supprimes) toast('Téléphone synchronisé : '+n.recus+' fiche(s) reçue(s)');
   return paquetSync();
 };
+/* Côté PC : le téléphone demande toutes les quelques secondes s'il y a du nouveau (réponse minuscule) */
+window.syncEtat=function(){ if(!DEMARRE||MODE!=='local') return null; return {app:'sni',rev:LS.get('rev','')}; };
 /* Côté téléphone : envoie ses données au PC et reçoit le résultat de la fusion */
-let syncEnCours=false;
+let syncEnCours=false, syncEssai=0;
 async function syncAvecPC(manuel){
   const c=LS.get('syncPC',null); if(!NATIF||!c||!c.ip||!c.code||syncEnCours||MODE!=='local') return;
-  syncEnCours=true;
+  syncEnCours=true; syncEssai=Date.now(); const avait=c.err;
   try{
+    const r0=LS.get('rev','');
     const r=await Capacitor.Plugins.CapacitorHttp.request({url:'http://'+c.ip+':8765/sni/sync',method:'POST',headers:{'Content-Type':'application/json','X-SNI-Code':c.code},data:paquetSync(),connectTimeout:6000,readTimeout:60000});
     const d=typeof r.data==='string'?JSON.parse(r.data):r.data;
     if(r.status!==200) throw new Error(d&&d.erreur||('erreur '+r.status));
-    const n=fusionner(d); LS.set('syncPC',{...c,der:new Date().toISOString(),err:''}); majApresSync();
+    const r1=LS.get('rev',''); /* une saisie faite pendant l'envoi sera renvoyée au prochain passage */
+    const n=fusionner(d);
+    LS.set('syncPC',{...c,der:new Date().toISOString(),err:'',pcRev:d.rev||'',locRev:r1===r0?LS.get('rev',''):'(à renvoyer)'}); majApresSync(n);
     if(manuel||n.recus||n.supprimes) toast('Synchronisé avec le PC'+(n.recus?' : '+n.recus+' fiche(s) reçue(s)':''));
   }catch(e){ LS.set('syncPC',{...c,err:String(e&&e.message||e).slice(0,120)}); if(manuel) toast('Synchronisation impossible : '+String(e&&e.message||e).slice(0,100)+'. Vérifiez : PC allumé, logiciel ouvert, même box (Wi-Fi), adresse et code exacts, pare-feu Windows autorisé.'); }
-  finally{ syncEnCours=false; if(view==='param'&&!document.querySelector('.modal')) render(); }
+  finally{ syncEnCours=false; const c2=LS.get('syncPC',{})||{}; if((manuel||!avait!==!c2.err)&&view==='param'&&!document.querySelector('.modal')&&!saisieEnCours()) render(); }
+}
+/* Côté téléphone : toutes les 4 secondes, demande au PC s'il y a du nouveau ; synchronise tout de suite si l'un des deux a changé */
+let syncVerif=false;
+async function verifierSync(){
+  const c=LS.get('syncPC',null); if(!NATIF||!c||!c.ip||!c.code||syncEnCours||syncVerif||MODE!=='local') return;
+  if(syncAffichage) majApresSync();
+  if(LS.get('rev','')!==c.locRev) return syncAvecPC();
+  syncVerif=true;
+  try{
+    const r=await Capacitor.Plugins.CapacitorHttp.request({url:'http://'+c.ip+':8765/sni/etat',method:'POST',headers:{'Content-Type':'application/json','X-SNI-Code':c.code},data:{},connectTimeout:3000,readTimeout:5000});
+    const d=typeof r.data==='string'?JSON.parse(r.data||'{}'):r.data;
+    syncVerif=false;
+    if(r.status===200&&d&&d.app==='sni'){ if(d.rev!==c.pcRev||c.err) return syncAvecPC(); return; }
+    /* ancien logiciel PC (sans vérification rapide) ou PC verrouillé : synchronisation complète une fois par minute */
+    if(Date.now()-syncEssai>60000) return syncAvecPC();
+  }catch(e){ syncVerif=false; if(Date.now()-syncEssai>60000) return syncAvecPC(); } /* PC injoignable : nouvel essai complet une fois par minute */
 }
 function demarrerSyncTel(){
   if(!NATIF) return; syncAvecPC();
-  setInterval(()=>{ if(document.visibilityState==='visible') syncAvecPC(); },60000);
+  setInterval(()=>{ if(document.visibilityState==='visible') verifierSync(); },4000);
   document.addEventListener('visibilitychange',()=>{ if(document.visibilityState==='visible') syncAvecPC(); });
 }
 async function enregistrerSyncPC(){
@@ -698,7 +735,7 @@ function wifiCard(){
   if(!NATIF) return '';
   const c=LS.get('syncPC',{})||{};
   return `<div class="card nocx"><h2>Synchronisation avec le PC (Wi-Fi)</h2>
-    <p class="muted" style="margin-top:0">Le téléphone et le PC doivent être sur le <b>même Wi-Fi</b>, avec le logiciel ouvert sur le PC. L’adresse et le code sont affichés sur le PC dans Paramètres › Synchronisation avec le téléphone. Ensuite, la synchronisation se fait toute seule à l’ouverture et chaque minute, dans les deux sens.</p>
+    <p class="muted" style="margin-top:0">Le téléphone et le PC doivent être sur le <b>même Wi-Fi</b>, avec le logiciel ouvert sur le PC. L’adresse et le code sont affichés sur le PC dans Paramètres › Synchronisation avec le téléphone. Ensuite, la synchronisation se fait toute seule <b>en direct</b>, dans les deux sens : ce qui est enregistré sur le téléphone apparaît sur le PC en quelques secondes, et inversement (tant que l’application est ouverte sur le téléphone).</p>
     <div class="row"><label class="f">Adresse du PC<input id="sy_ip" inputmode="decimal" value="${h(c.ip||'')}" placeholder="Ex. : 192.168.1.20"></label>
       <label class="f">Code (6 chiffres)<input id="sy_code" inputmode="numeric" maxlength="6" value="${h(c.code||'')}" placeholder="Ex. : 123456"></label>
       <button class="btn pri" style="flex:0 0 auto" onclick="enregistrerSyncPC()">Enregistrer et synchroniser</button>${c.ip?'<button class="btn" style="flex:0 0 auto" onclick="syncAvecPC(true)">Synchroniser maintenant</button>':''}</div>

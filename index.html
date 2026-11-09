@@ -361,7 +361,7 @@ const IC = {
 const NAV = [['menu','Menu principal','menu'],['home','Accueil','home'],['facture','Facture','fac'],['registre','Registre','reg'],['charges','Charges','chg'],['employes','Employés','emp'],['paie','Paie','pay'],['pdg','PDG','pdg'],['tracto','Tractopelle','trc'],['rapports','Rapports','rap'],['param','Paramètres','par']];
 const svg = k => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${IC[k]}</svg>`;
 let view = 'menu';
-const VERSION_APP='2.0.81';
+const VERSION_APP='2.0.82';
 /* Créateur du logiciel : coordonnées fixes, intégrées au code (identiques dans chaque installation, non modifiables) */
 const CREATEUR={nom:'ALI DAÏM',email:'daim3575@gmail.com',tels:['+269 323 05 70','+269 432 29 14']};
 const waLien=t=>'https://wa.me/'+t.replace(/\D/g,'');
@@ -2792,8 +2792,122 @@ function vEmployes(m){
     ${act.map(e=>`<tr><td><b>${h(numE(e))}</b></td><td><b>${h(e.nom)}</b></td><td>${h(e.poste)}</td><td>${h(e.tel||'')}</td><td>${e.embauche?dOnly(e.embauche+'T12:00:00'):'—'}</td><td class="r num">${money(brutE(e))}</td><td class="r num">${money(netE(e))}</td>
       <td><div class="btns" style="flex-wrap:nowrap"><button class="btn sm pri" onclick="pp=ymNow();voirBulletin('${e.id}')">Bulletin</button><button class="btn sm" onclick="editEmp='${e.id}';render();scrollTo(0,0)">Modifier</button><button class="btn sm danger" onclick="departEmp('${e.id}')">Départ</button></div></td></tr>`).join('')}
     </tbody></table></div>`:'<div class="empty">Aucun employé. Remplissez le formulaire ci-dessus.</div>'}</div>
+  ${docsRHCard()}
   ${partis.length?`<div class="card"><h2>Anciens employés</h2><p class="muted" style="margin-top:0">Leurs bulletins restent disponibles dans la page Paie pour les mois travaillés.</p><div class="scroll"><table><tbody>${partis.map(e=>`<tr><td>${h(numE(e))}</td><td>${h(e.nom)}</td><td>${h(e.poste)}</td><td>Départ : ${moisTxt(e.fin)}</td><td><button class="btn sm" onclick="reprendreEmp('${e.id}')">Reprendre</button></td></tr>`).join('')}</tbody></table></div></div>`:''}`;
   livePaie();
+}
+/* ============ Documents de l'employé : attestation de travail, attestation de stage, contrat de travail ============
+   Les cases se remplissent depuis la fiche de l'employé choisi ; le document s'ouvre pour être imprimé ou enregistré en PDF. */
+const DRH_K={at:'Attestation de travail',as:'Attestation de stage',ct:'Contrat de travail'};
+const dLong=s=>{ if(!s) return '…'; const [y,m,d]=String(s).slice(0,10).split('-'); return (+d===1?'1er':+d)+' '+MOIS[+m-1].toLowerCase()+' '+y; };
+const drhNum=k=>{ const d=new Date(); return ({at:'AT',as:'AS',ct:'CT'})[k]+'-'+d.getFullYear()+pad(d.getMonth()+1)+pad(d.getDate())+'-'+pad(d.getHours())+pad(d.getMinutes()); };
+const deQ=p=>{ p=String(p||'…'); return (/^[aeiouyhâàéèêîôûAEIOUYHÂÀÉÈÊÎÔÛ]/.test(p)?'d’':'de ')+h(p); };
+const drhPrefs=()=>LS.get('docsRH',{})||{};
+const drhV=id=>String(val(id)||'').trim();
+const drhEmpOpts=k=>`<option value="">— Choisir un employé (ou remplir à la main) —</option>${[...EMP].sort((a,b)=>String(a.nom).localeCompare(String(b.nom))).map(e=>`<option value="${e.id}">${h(e.nom)}${e.fin?' (ancien)':''}</option>`).join('')}`;
+const drhIn=(id,l,v='',t='text',x='')=>`<label class="f">${l}<input id="${id}" type="${t}" value="${h(v)}" ${x}></label>`;
+const drhCiv=id=>`<label class="f" style="max-width:150px">Civilité<select id="${id}"><option value="M">Monsieur</option><option value="Mme">Madame</option></select></label>`;
+function docsRHCard(){
+  const P=drhPrefs(), ville=P.ville||'', sig=P.sign||S.responsable||nomAdmin()||'', fsig=P.fsign||'Directeur Général';
+  const commun=k=>`<div class="row" style="margin-top:.6rem">${drhIn(k+'_ville','Fait à (ville)',ville,'text','placeholder="Ex. : Moroni"')}${drhIn(k+'_sig','Nom du signataire',sig)}${drhIn(k+'_fsig','Fonction du signataire',fsig)}</div>`;
+  const btn=k=>`<div class="btns" style="margin-top:.7rem"><button class="btn pri" onclick="drhCreer('${k}')">Créer ${k==='ct'?'le contrat':'l’attestation'}</button></div>`;
+  return `<div class="card" id="docsRH"><h2>Documents de l’employé</h2>
+  <p class="muted" style="margin-top:0">Choisissez un employé : ses informations se remplissent toutes seules. Vous pouvez tout modifier avant de créer le document, puis l’imprimer ou l’enregistrer en PDF.</p>
+  <h3 style="margin:1rem 0 .4rem">1. Attestation de travail</h3>
+  <div class="row"><label class="f">Employé<select id="at_emp" onchange="drhRemplir('at',this.value)">${drhEmpOpts('at')}</select></label>${drhCiv('at_civ')}${drhIn('at_nom','Nom et prénom')}</div>
+  <div class="row" style="margin-top:.6rem">${drhIn('at_poste','Fonction')}${drhIn('at_deb','Date d’embauche','', 'date')}
+    <label class="f">Situation<select id="at_sit" onchange="document.getElementById('at_finw').style.display=this.value==='parti'?'':'none'"><option value="poste">Toujours en poste</option><option value="parti">A quitté l’entreprise</option></select></label>
+    <span id="at_finw" style="display:none;flex:1">${drhIn('at_fin','Date de départ','','date')}</span></div>
+  ${commun('at')}${btn('at')}
+  <h3 style="margin:1.4rem 0 .4rem">2. Attestation de stage</h3>
+  <div class="row">${drhCiv('as_civ')}${drhIn('as_nom','Nom et prénom du stagiaire')}${drhIn('as_nais','Né(e) le (facultatif)','','date')}${drhIn('as_ecole','École / établissement (facultatif)')}</div>
+  <div class="row" style="margin-top:.6rem">${drhIn('as_serv','Service / poste du stage','','text','placeholder="Ex. : impression et accueil"')}${drhIn('as_deb','Début du stage','','date')}${drhIn('as_fin','Fin du stage','','date')}
+    <label class="f">Appréciation<select id="as_app"><option>Très satisfaisant</option><option>Satisfaisant</option><option>Assez satisfaisant</option><option value="">(ne pas indiquer)</option></select></label></div>
+  <div class="row" style="margin-top:.6rem"><label class="f">Travaux effectués (facultatif)<textarea id="as_mis" rows="2" placeholder="Ex. : impression de documents, accueil des clients, saisie des factures"></textarea></label></div>
+  ${commun('as')}${btn('as')}
+  <h3 style="margin:1.4rem 0 .4rem">3. Contrat de travail</h3>
+  <div class="row"><label class="f">Employé<select id="ct_emp" onchange="drhRemplir('ct',this.value)">${drhEmpOpts('ct')}</select></label>${drhCiv('ct_civ')}${drhIn('ct_nom','Nom et prénom du salarié')}${drhIn('ct_tel','Téléphone du salarié')}</div>
+  <div class="row" style="margin-top:.6rem">${drhIn('ct_nais','Né(e) le (facultatif)','','date')}${drhIn('ct_adr','Adresse du salarié (facultatif)')}${drhIn('ct_piece','N° pièce d’identité (facultatif)')}</div>
+  <div class="row" style="margin-top:.6rem">${drhIn('ct_poste','Fonction')}
+    <label class="f">Type de contrat<select id="ct_type" onchange="document.getElementById('ct_finw').style.display=this.value==='CDD'?'':'none'"><option value="CDI">Durée indéterminée (CDI)</option><option value="CDD">Durée déterminée (CDD)</option></select></label>
+    ${drhIn('ct_deb','Date de début','', 'date')}<span id="ct_finw" style="display:none;flex:1">${drhIn('ct_fin','Date de fin (CDD)','','date')}</span></div>
+  <div class="row" style="margin-top:.6rem">${drhIn('ct_sal','Salaire mensuel brut (KMF)','','number','inputmode="numeric" min="0"')}${drhIn('ct_essai','Période d’essai','1 mois')}${drhIn('ct_hor','Horaires de travail',P.hor||'40 heures par semaine, du lundi au samedi')}${drhIn('ct_conges','Congés payés',P.conges||'2,5 jours ouvrables par mois de travail')}</div>
+  <div class="row" style="margin-top:.6rem">${drhIn('ct_lieu','Lieu de travail',P.lieu||S.adresse||'')}${drhIn('ct_preavis','Préavis en cas de rupture',P.preavis||'1 mois')}</div>
+  ${commun('ct')}${btn('ct')}</div>`;
+}
+function drhRemplir(k,id){
+  const e=EMP.find(x=>x.id===id); if(!e) return;
+  const set=(i,v)=>{ const el=document.getElementById(k+'_'+i); if(el&&v!=null) el.value=v; };
+  set('nom',e.nom); set('poste',e.poste);
+  if(k==='at'){ set('deb',e.embauche||''); const s=document.getElementById('at_sit'); s.value=e.fin?'parti':'poste'; s.onchange(); if(e.fin) set('fin',lastDay(e.fin)); }
+  if(k==='ct'){ set('tel',e.tel||''); set('deb',e.embauche||''); set('sal',brutE(e)||e.salaire||''); }
+}
+const drhTete=(k,num)=>`${entete(DRH_K[k].toUpperCase(),num,new Date().toISOString())}`;
+const drhFait=(k,v)=>`<p style="margin-top:22px;text-align:right">Fait à ${h(v.ville||'…')}, le ${dLong(auj())}.</p>`;
+const drhSign=(v,autre)=>`<div class="foot" style="justify-content:flex-end">${autre?`<div class="sign" style="min-width:170px"><div class="zone"></div><div class="lbl">${autre}</div></div>`:''}<div class="sign" style="min-width:170px"><div class="zone"></div><div class="lbl">${h(v.fsig||'L’employeur')}</div><div>${h(v.sig)}</div></div></div>`;
+const drhP='style="font-size:14px;line-height:1.75;text-align:justify;margin:10px 0"';
+function drhHTML(k,v){
+  const Mme=v.civ==='Mme', civ=Mme?'Madame':'Monsieur', e_=Mme?'e':'', il=Mme?'elle':'il', num=drhNum(k);
+  const ent=`<b>${h(S.nom)}</b>${S.adresse?', sise à '+h(S.adresse):''}${S.nif?', R.C.S '+h(S.nif):''}`;
+  if(k==='at') return `<div class="sheet">${drhTete(k,num)}
+    <h2 style="text-align:center;margin:26px 0 18px;letter-spacing:.06em">ATTESTATION DE TRAVAIL</h2>
+    <p ${drhP}>Je soussigné(e), <b>${h(v.sig||'…')}</b>, ${h(v.fsig||'responsable')} de la société ${ent}, atteste par la présente que :</p>
+    <p style="text-align:center;font-size:16px;line-height:1.6;margin:14px 0"><b>${civ} ${h(String(v.nom).toUpperCase())}</b></p>
+    <p ${drhP}>${v.sit==='parti'
+      ?`a été employé${e_} au sein de notre société en qualité <b>${deQ(v.poste)}</b>, du <b>${dLong(v.deb)}</b> au <b>${dLong(v.fin)}</b>. ${il[0].toUpperCase()+il.slice(1)} nous quitte libre de tout engagement.`
+      :`est employé${e_} au sein de notre société en qualité <b>${deQ(v.poste)}</b> depuis le <b>${dLong(v.deb)}</b> et occupe ce poste à ce jour.`}</p>
+    <p ${drhP}>La présente attestation est délivrée à l’intéressé${e_} pour servir et valoir ce que de droit.</p>
+    ${drhFait(k,v)}${drhSign(v)}
+    <div class="bottom">${h(S.nom)} – ${h(S.adresse)}${S.tel?' – Tél. : '+h(S.tel):''}</div></div>`;
+  if(k==='as') return `<div class="sheet">${drhTete(k,num)}
+    <h2 style="text-align:center;margin:26px 0 18px;letter-spacing:.06em">ATTESTATION DE STAGE</h2>
+    <p ${drhP}>Je soussigné(e), <b>${h(v.sig||'…')}</b>, ${h(v.fsig||'responsable')} de la société ${ent}, atteste que :</p>
+    <p style="text-align:center;font-size:16px;line-height:1.6;margin:14px 0"><b>${civ} ${h(String(v.nom).toUpperCase())}</b>${v.nais?`<br><span style="font-size:14px">né${e_} le ${dLong(v.nais)}</span>`:''}</p>
+    <p ${drhP}>${v.ecole?`étudiant${e_} à <b>${h(v.ecole)}</b>, `:''}a effectué un stage au sein de notre société${v.serv?`, au service <b>${h(v.serv)}</b>,`:''} du <b>${dLong(v.deb)}</b> au <b>${dLong(v.fin)}</b>.</p>
+    ${v.mis?`<p ${drhP}>Au cours de ce stage, ${il} a notamment effectué les travaux suivants : ${h(v.mis)}.</p>`:''}
+    ${v.app?`<p ${drhP}>Durant toute la durée de son stage, ${civ} ${h(v.nom)} a fait preuve de sérieux et d’assiduité. Son travail a été jugé <b>${h(v.app.toLowerCase())}</b>.</p>`:''}
+    <p ${drhP}>La présente attestation lui est délivrée pour servir et valoir ce que de droit.</p>
+    ${drhFait(k,v)}${drhSign(v)}
+    <div class="bottom">${h(S.nom)} – ${h(S.adresse)}${S.tel?' – Tél. : '+h(S.tel):''}</div></div>`;
+  /* contrat : deux pages (articles, puis fin des articles et signatures) */
+  const cdd=v.type==='CDD', sal=n0(v.sal), A=(n,t,c)=>`<p ${drhP}><b>Article ${n} – ${t}</b><br>${c}</p>`;
+  const p1=[
+    A(1,'Engagement',`${ent}, représentée par ${h(v.sig||'…')}, ${h(v.fsig||'responsable')}, ci-après « l’Employeur », engage ${civ} <b>${h(v.nom)}</b>${v.nais?', né'+e_+' le '+dLong(v.nais):''}${v.adr?', demeurant à '+h(v.adr):''}${v.piece?', pièce d’identité n° '+h(v.piece):''}${v.tel?', téléphone '+h(v.tel):''}, ci-après « le Salarié », qui accepte, aux conditions ci-dessous.`),
+    A(2,'Nature et durée du contrat',cdd?`Le présent contrat est conclu pour une <b>durée déterminée</b>, du <b>${dLong(v.deb)}</b> au <b>${dLong(v.fin)}</b>. Il prend fin de plein droit à cette date, sauf renouvellement écrit.`:`Le présent contrat est conclu pour une <b>durée indéterminée</b>. Il prend effet le <b>${dLong(v.deb)}</b>.`),
+    A(3,'Période d’essai',v.essai&&!/^(0|aucune?)$/i.test(v.essai)?`Le contrat ne deviendra définitif qu’à l’issue d’une période d’essai de <b>${h(v.essai)}</b>, pendant laquelle chacune des parties peut y mettre fin sans préavis ni indemnité.`:'Le présent contrat ne comporte pas de période d’essai.'),
+    A(4,'Fonctions',`Le Salarié est engagé en qualité <b>${deQ(v.poste)}</b>. Il exécutera avec soin les tâches liées à ce poste et celles que l’Employeur pourra lui confier en rapport avec ses compétences.`),
+    A(5,'Lieu de travail',`Le Salarié exercera ses fonctions à <b>${h(v.lieu||S.adresse||'…')}</b>, ou en tout autre lieu où l’activité de l’entreprise l’exige.`),
+    A(6,'Durée du travail',`La durée du travail est fixée à <b>${h(v.hor||'…')}</b>, selon les horaires en vigueur dans l’entreprise.`)].join('');
+  const p2=[
+    A(7,'Rémunération',`En contrepartie de son travail, le Salarié percevra un salaire mensuel brut de <b>${money(sal)}</b> (${h(enLettres(sal))}), payable à la fin de chaque mois, après les retenues prévues par la loi.`),
+    A(8,'Congés payés',`Le Salarié a droit à des congés payés de <b>${h(v.conges||'…')}</b>, pris en accord avec l’Employeur.`),
+    A(9,'Obligations du Salarié','Le Salarié s’engage à respecter le règlement intérieur, les horaires et les consignes de l’entreprise, à prendre soin du matériel qui lui est confié et à garder le secret sur toutes les informations concernant l’entreprise et ses clients, pendant et après le contrat.'),
+    A(10,'Rupture du contrat',cdd?`En dehors de la période d’essai, le contrat ne peut être rompu avant son terme qu’en cas de faute grave, de force majeure ou d’accord des deux parties.`:`En dehors de la période d’essai, chacune des parties peut mettre fin au contrat en respectant un préavis de <b>${h(v.preavis||'…')}</b>, sauf faute grave.`),
+    A(11,'Dispositions générales','Pour tout ce qui n’est pas prévu au présent contrat, les parties se réfèrent au Code du travail en vigueur. Tout différend sera d’abord réglé à l’amiable, puis, à défaut, soumis à l’inspection du travail et aux juridictions compétentes.')].join('');
+  return `<div class="sheet">${drhTete(k,num)}<span class="fx-sign" hidden></span>
+    <h2 style="text-align:center;margin:18px 0 6px;letter-spacing:.06em">CONTRAT DE TRAVAIL ${cdd?'À DURÉE DÉTERMINÉE':'À DURÉE INDÉTERMINÉE'}</h2>
+    <p style="text-align:center;margin:0 0 10px" class="muted">Entre ${h(S.nom)} (l’Employeur) et ${civ} ${h(v.nom)} (le Salarié)</p>${p1}
+    <p style="text-align:right;margin-top:18px;font-size:12px">Paraphes : Employeur ______ Salarié ______ — Page 1/2</p></div>
+  <div class="sheet"><p style="font-size:12px;margin:0 0 6px" class="muted">Contrat de travail n° ${num} – ${civ} ${h(v.nom)} – Page 2/2</p>${p2}
+    <p ${drhP}>Fait en deux exemplaires originaux, un pour chaque partie.</p>
+    ${drhFait(k,v)}
+    <p style="font-size:12px;margin:6px 0" class="muted">Chaque partie écrit à la main « Lu et approuvé » avant de signer.</p>
+    ${drhSign(v,'Le Salarié<br>'+h(v.nom))}
+    <div class="bottom">${h(S.nom)} – ${h(S.adresse)}${S.tel?' – Tél. : '+h(S.tel):''}</div></div>`;
+}
+function drhCreer(k){
+  const v={civ:drhV(k+'_civ'),nom:drhV(k+'_nom'),poste:drhV(k+'_poste'),deb:drhV(k+'_deb'),fin:drhV(k+'_fin'),ville:drhV(k+'_ville'),sig:drhV(k+'_sig'),fsig:drhV(k+'_fsig'),
+    sit:drhV('at_sit'),nais:drhV(k+'_nais'),ecole:drhV('as_ecole'),serv:drhV('as_serv'),app:drhV('as_app'),mis:drhV('as_mis').replace(/\.+$/,''),
+    tel:drhV('ct_tel'),adr:drhV('ct_adr'),piece:drhV('ct_piece'),type:drhV('ct_type'),sal:drhV('ct_sal'),essai:drhV('ct_essai'),hor:drhV('ct_hor'),conges:drhV('ct_conges'),lieu:drhV('ct_lieu'),preavis:drhV('ct_preavis')};
+  if(!v.nom){ toast('Indiquez le nom'); document.getElementById(k+'_nom').focus(); return; }
+  if(!v.deb){ toast(k==='as'?'Indiquez la date de début du stage':'Indiquez la date '+(k==='at'?'d’embauche':'de début')); document.getElementById(k+'_deb').focus(); return; }
+  if((k==='as'||(k==='at'&&v.sit==='parti')||(k==='ct'&&v.type==='CDD'))&&!v.fin){ toast('Indiquez la date de fin'); document.getElementById(k+'_fin').focus(); return; }
+  if(v.fin&&v.fin<v.deb){ toast('La date de fin est avant la date de début'); return; }
+  if(k==='ct'&&n0(v.sal)<=0){ toast('Indiquez le salaire mensuel'); document.getElementById('ct_sal').focus(); return; }
+  const P=drhPrefs(); P.ville=v.ville; P.sign=v.sig; P.fsign=v.fsig; if(k==='ct'){ P.hor=v.hor; P.conges=v.conges; P.lieu=v.lieu; P.preavis=v.preavis; } LS.set('docsRH',P);
+  const html=drhHTML(k,v), fich=(DRH_K[k]+' '+v.nom).normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^\w]+/g,'-').toLowerCase()+'.pdf';
+  journal(DRH_K[k]+' créé(e) : '+v.nom);
+  ouvrirRecu(DRH_K[k]+' – '+h(v.nom),html,fich);
 }
 /* Page Paie : bulletins du mois */
 function vPaie(m){

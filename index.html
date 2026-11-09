@@ -361,7 +361,7 @@ const IC = {
 const NAV = [['menu','Menu principal','menu'],['home','Accueil','home'],['facture','Facture','fac'],['registre','Registre','reg'],['charges','Charges','chg'],['employes','Employés','emp'],['paie','Paie','pay'],['pdg','PDG','pdg'],['tracto','Tractopelle','trc'],['rapports','Rapports','rap'],['param','Paramètres','par']];
 const svg = k => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${IC[k]}</svg>`;
 let view = 'menu';
-const VERSION_APP='2.0.79';
+const VERSION_APP='2.0.80';
 /* Créateur du logiciel : coordonnées fixes, intégrées au code (identiques dans chaque installation, non modifiables) */
 const CREATEUR={nom:'ALI DAÏM',email:'daim3575@gmail.com',tels:['+269 323 05 70','+269 432 29 14']};
 const waLien=t=>'https://wa.me/'+t.replace(/\D/g,'');
@@ -1422,7 +1422,7 @@ async function convertir(id){
 function modifier(id){ const f=FAC.find(x=>x.id===id); draft=JSON.parse(JSON.stringify(f)); editing=id; closeModal(); view='facture'; drawNav(); render(); }
 async function supprimer(id){
   const f=FAC.find(x=>x.id===id); if(!confirm('Supprimer définitivement la facture '+f.num+' ?')) return;
-  if(!await codeSuppr('supprimer la facture '+f.num)) return;
+  if(!await codeSuppr('supprimer la facture '+f.num,'f')) return;
   await del('factures',id); journal('Facture supprimée : '+f.num+' – '+f.client); closeModal();
   if(draft&&draft.id===id){ editing=null; newDraft(); clearBrouillon(); } toast('Facture supprimée'); render();
 }
@@ -3691,6 +3691,7 @@ function vParam(m){
   ${appareilsCard()}
   ${majCard()}
   ${codeSupprCard()}
+  ${codeSupprFacCard()}
   ${sauvegardeCard()}
   ${importCard()}
   <div class="card"><h2>Remettre l’application à zéro</h2><p class="muted" style="margin-top:0">Efface toutes les factures, charges, employés et transactions du PDG, y compris tout ce qui vient d’Excel. Le nom de l’entreprise, le logo, le cachet et la signature sont conservés.</p>
@@ -3848,7 +3849,7 @@ async function ouvrirMaj(verifier){
      :`<p class="muted" style="margin-bottom:0">Version navigateur : remplacez ce fichier .html par la nouvelle version, au même endroit, puis rouvrez-le avec le même navigateur. Vos données sont conservées.</p>`}`);
 }
 /* Sauvegarde complète de toutes les données (factures, charges, employés, PDG, paramètres, images) */
-const SAUV_APP='gestion-sni', SAUV_EXCLUS=['comptes','connexionOff','adminSeul','connOffV','verrou'];
+const SAUV_APP='gestion-sni', SAUV_EXCLUS=['comptes','connexionOff','adminSeul','connOffV','verrou','codeSupprFac'];
 const sauvegardeCard=()=>`<div class="card"><h2>Sauvegarde complète</h2><p class="muted" style="margin-top:0">Téléchargez un fichier qui contient toutes les données : factures, reçus, charges, employés et bulletins, compte du PDG, paramètres, logo et cachet. Gardez-le sur une clé USB ou envoyez-le-vous par e-mail. Faites-le au moins une fois par semaine.</p>
   <div class="btns"><button class="btn pri" onclick="sauvegarder()">Télécharger la sauvegarde complète</button><label class="btn">Restaurer une sauvegarde<input type="file" accept=".json,application/json" style="display:none" onchange="restaurerTout(this)"></label></div>
   <p class="muted" style="margin-bottom:0">${S.derniereSauv?'Dernière sauvegarde : '+dt(S.derniereSauv)+'.':'<span style="color:var(--unpaid)">Aucune sauvegarde complète faite pour le moment.</span>'} Les comptes et les codes secrets ne sont jamais remplacés par une restauration.</p></div>`;
@@ -3884,32 +3885,41 @@ function journal(action,qui){ const u=qui||(USER&&USER.nom)||'—'; try{ const L
 const lireJournal=()=>{ try{ return JSON.parse(localStorage.getItem(JKEY)||'[]'); }catch(e){ return []; } };
 /* Code secret de suppression (4 chiffres) : demandé avant toute suppression ou tout vidage.
    Gardé chiffré dans les paramètres (le même sur le PC et le téléphone par la synchronisation). 5 erreurs = blocage 5 minutes. */
+/* Deux codes : g = code général (charges, PDG, caisses…), f = code secret réservé à la suppression des factures */
+const CODES={g:{champ:'codeSuppr',sel:'suppression',nom:'code secret de suppression'},f:{champ:'codeSupprFac',sel:'suppression-facture',nom:'code secret de suppression des factures'}};
 let codeErr={n:0,jusqua:0};
-async function creerCodeSuppr(titre){
-  const a=await demander(titre+'\nTapez un code de 4 chiffres. Il sera demandé pour chaque suppression.','','password'); if(a==null) return false;
+async function creerCodeSuppr(titre,k='g'){
+  const C=CODES[k];
+  const a=await demander(titre+'\nTapez un code de 4 chiffres. Il sera demandé pour chaque suppression'+(k==='f'?' de facture':'')+'.','','password'); if(a==null) return false;
   if(!/^\d{4}$/.test(a.trim())){ toast('Le code doit contenir exactement 4 chiffres'); return false; }
   const b=await demander('Retapez le nouveau code pour confirmer','','password'); if(b==null) return false;
   if(b.trim()!==a.trim()){ toast('Les deux codes ne sont pas identiques'); return false; }
-  S.codeSuppr=await hashPin('suppression',a.trim());
+  S[C.champ]=await hashPin(C.sel,a.trim());
   try{ await saveSettings(); }catch(e){ toast('Échec de l’enregistrement du code'); return false; }
-  journal('Code secret de suppression '+(titre.startsWith('Nouveau')?'changé':'créé')); toast('Code secret de suppression enregistré'); return true;
+  const nom=C.nom[0].toUpperCase()+C.nom.slice(1);
+  journal(nom+' '+(titre.startsWith('Nouveau')?'changé':'créé')); toast(nom+' enregistré'); return true;
 }
-async function verifCodeSuppr(motif){
+async function verifCodeSuppr(motif,k='g'){
+  const C=CODES[k];
   if(Date.now()<codeErr.jusqua){ toast('Trop d’erreurs : réessayez dans '+Math.ceil((codeErr.jusqua-Date.now())/60000)+' min'); return false; }
-  const p=await demander('Code secret de suppression (4 chiffres)\nPour : '+motif,'','password'); if(p==null) return false;
-  if(await hashPin('suppression',String(p).trim())===S.codeSuppr){ codeErr.n=0; journal('Code de suppression accepté : '+motif); return true; }
+  const p=await demander((k==='f'?'Code secret des factures':'Code secret de suppression')+' (4 chiffres)\nPour : '+motif,'','password'); if(p==null) return false;
+  if(await hashPin(C.sel,String(p).trim())===S[C.champ]){ codeErr.n=0; journal('Code de suppression accepté : '+motif); return true; }
   codeErr.n++; if(codeErr.n>=5){ codeErr={n:0,jusqua:Date.now()+5*60000}; }
   journal('Code de suppression refusé : '+motif); toast('Code secret incorrect'); return false;
 }
-async function codeSuppr(motif){
-  if(!S.codeSuppr) return creerCodeSuppr('Créez d’abord votre code secret de suppression.');
-  return verifCodeSuppr(motif);
+async function codeSuppr(motif,k='g'){
+  if(!S[CODES[k].champ]) return creerCodeSuppr(k==='f'?'Créez d’abord le code secret pour supprimer les factures.':'Créez d’abord votre code secret de suppression.',k);
+  return verifCodeSuppr(motif,k);
 }
-async function changerCodeSuppr(){
-  if(S.codeSuppr&&!await verifCodeSuppr('changer le code secret de suppression')) return;
-  await creerCodeSuppr(S.codeSuppr?'Nouveau code secret de suppression.':'Création du code secret de suppression.'); render();
+async function changerCodeSuppr(k='g'){
+  const C=CODES[k];
+  if(S[C.champ]&&!await verifCodeSuppr('changer le '+C.nom,k)) return;
+  await creerCodeSuppr(S[C.champ]?'Nouveau '+C.nom+'.':'Création du '+C.nom+'.',k); render();
 }
-const codeSupprCard=()=>`<div class="card"><h2>Code secret de suppression</h2><p class="muted" style="margin-top:0">Code de 4 chiffres demandé avant de supprimer ou de vider n’importe quelle ligne : facture, charge, transaction ou virement du PDG, caisse, tarif, compte du PDG, remise à zéro.</p>
+const codeSupprFacCard=()=>`<div class="card"><h2>Code secret pour supprimer une facture</h2><p class="muted" style="margin-top:0">Code de 4 chiffres, différent du code de suppression général, demandé avant de supprimer une facture (proforma ou définitive). Seules les personnes qui le connaissent peuvent supprimer une facture.</p>
+  <p>${S.codeSupprFac?'<span class="tag paid">Code des factures actif</span>':'<span class="tag unpaid">Aucun code pour le moment : il sera demandé à la première suppression d’une facture</span>'}</p>
+  <div class="btns"><button class="btn pri" onclick="changerCodeSuppr('f')">${S.codeSupprFac?'Changer le code des factures':'Créer le code des factures'}</button></div></div>`;
+const codeSupprCard=()=>`<div class="card"><h2>Code secret de suppression</h2><p class="muted" style="margin-top:0">Code de 4 chiffres demandé avant de supprimer ou de vider n’importe quelle ligne (sauf les factures, qui ont leur propre code) : charge, transaction ou virement du PDG, caisse, tarif, compte du PDG, remise à zéro.</p>
   <p>${S.codeSuppr?'<span class="tag paid">Code secret actif</span>':'<span class="tag unpaid">Aucun code pour le moment</span>'}</p>
   <div class="btns"><button class="btn pri" onclick="changerCodeSuppr()">${S.codeSuppr?'Changer le code secret':'Créer le code secret'}</button></div></div>`;
 async function confirmerAdmin(motif){

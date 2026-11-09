@@ -361,7 +361,7 @@ const IC = {
 const NAV = [['menu','Menu principal','menu'],['home','Accueil','home'],['facture','Facture','fac'],['registre','Registre','reg'],['charges','Charges','chg'],['employes','Employés','emp'],['paie','Paie','pay'],['pdg','PDG','pdg'],['tracto','Tractopelle','trc'],['rapports','Rapports','rap'],['param','Paramètres','par']];
 const svg = k => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${IC[k]}</svg>`;
 let view = 'menu';
-const VERSION_APP='2.0.80';
+const VERSION_APP='2.0.81';
 /* Créateur du logiciel : coordonnées fixes, intégrées au code (identiques dans chaque installation, non modifiables) */
 const CREATEUR={nom:'ALI DAÏM',email:'daim3575@gmail.com',tels:['+269 323 05 70','+269 432 29 14']};
 const waLien=t=>'https://wa.me/'+t.replace(/\D/g,'');
@@ -3690,8 +3690,8 @@ function vParam(m){
   ${wifiCard()}
   ${appareilsCard()}
   ${majCard()}
-  ${codeSupprCard()}
-  ${codeSupprFacCard()}
+  ${codesActifsCard()}
+  ${S.codesSuppr?codeSupprCard()+codeSupprFacCard():''}
   ${sauvegardeCard()}
   ${importCard()}
   <div class="card"><h2>Remettre l’application à zéro</h2><p class="muted" style="margin-top:0">Efface toutes les factures, charges, employés et transactions du PDG, y compris tout ce qui vient d’Excel. Le nom de l’entreprise, le logo, le cachet et la signature sont conservés.</p>
@@ -3849,7 +3849,7 @@ async function ouvrirMaj(verifier){
      :`<p class="muted" style="margin-bottom:0">Version navigateur : remplacez ce fichier .html par la nouvelle version, au même endroit, puis rouvrez-le avec le même navigateur. Vos données sont conservées.</p>`}`);
 }
 /* Sauvegarde complète de toutes les données (factures, charges, employés, PDG, paramètres, images) */
-const SAUV_APP='gestion-sni', SAUV_EXCLUS=['comptes','connexionOff','adminSeul','connOffV','verrou','codeSupprFac'];
+const SAUV_APP='gestion-sni', SAUV_EXCLUS=['comptes','connexionOff','adminSeul','connOffV','verrou','codeSupprFac','codesSuppr'];
 const sauvegardeCard=()=>`<div class="card"><h2>Sauvegarde complète</h2><p class="muted" style="margin-top:0">Téléchargez un fichier qui contient toutes les données : factures, reçus, charges, employés et bulletins, compte du PDG, paramètres, logo et cachet. Gardez-le sur une clé USB ou envoyez-le-vous par e-mail. Faites-le au moins une fois par semaine.</p>
   <div class="btns"><button class="btn pri" onclick="sauvegarder()">Télécharger la sauvegarde complète</button><label class="btn">Restaurer une sauvegarde<input type="file" accept=".json,application/json" style="display:none" onchange="restaurerTout(this)"></label></div>
   <p class="muted" style="margin-bottom:0">${S.derniereSauv?'Dernière sauvegarde : '+dt(S.derniereSauv)+'.':'<span style="color:var(--unpaid)">Aucune sauvegarde complète faite pour le moment.</span>'} Les comptes et les codes secrets ne sont jamais remplacés par une restauration.</p></div>`;
@@ -3907,7 +3907,10 @@ async function verifCodeSuppr(motif,k='g'){
   codeErr.n++; if(codeErr.n>=5){ codeErr={n:0,jusqua:Date.now()+5*60000}; }
   journal('Code de suppression refusé : '+motif); toast('Code secret incorrect'); return false;
 }
+/* Codes de suppression désactivés par défaut (demande du 09/11/2026) : on supprime sans code, après la simple confirmation.
+   Ils peuvent être réactivés dans Paramètres (S.codesSuppr = true). */
 async function codeSuppr(motif,k='g'){
+  if(!S.codesSuppr){ journal('Suppression sans code : '+motif); return true; }
   if(!S[CODES[k].champ]) return creerCodeSuppr(k==='f'?'Créez d’abord le code secret pour supprimer les factures.':'Créez d’abord votre code secret de suppression.',k);
   return verifCodeSuppr(motif,k);
 }
@@ -3915,6 +3918,17 @@ async function changerCodeSuppr(k='g'){
   const C=CODES[k];
   if(S[C.champ]&&!await verifCodeSuppr('changer le '+C.nom,k)) return;
   await creerCodeSuppr(S[C.champ]?'Nouveau '+C.nom+'.':'Création du '+C.nom+'.',k); render();
+}
+const codesActifsCard=()=>`<div class="card"><h2>Codes secrets pour supprimer</h2>
+  ${S.codesSuppr?`<p class="muted" style="margin-top:0">Les codes secrets sont <b>demandés</b> avant chaque suppression.</p><p><span class="tag paid">Codes activés</span></p>
+    <div class="btns"><button class="btn" onclick="activerCodes(false)">Supprimer sans code</button></div>`
+  :`<p class="muted" style="margin-top:0">Aucun code n’est demandé : on peut supprimer une facture, une charge ou une ligne du PDG <b>sans code</b>, après avoir simplement confirmé « Supprimer ? ».</p><p><span class="tag unpaid">Suppression sans code</span></p>
+    <div class="btns"><button class="btn pri" onclick="activerCodes(true)">Remettre les codes secrets</button></div>`}</div>`;
+async function activerCodes(on){
+  if(!on&&!confirm('Ne plus demander de code secret pour supprimer ?')) return;
+  if(!on&&S.codeSuppr&&!await verifCodeSuppr('désactiver les codes de suppression')) return;
+  S.codesSuppr=!!on; try{ await saveSettings(); }catch(e){ toast('Échec de l’enregistrement'); return; }
+  journal(on?'Codes de suppression réactivés':'Codes de suppression désactivés'); toast(on?'Codes secrets réactivés':'Suppression sans code'); render();
 }
 const codeSupprFacCard=()=>`<div class="card"><h2>Code secret pour supprimer une facture</h2><p class="muted" style="margin-top:0">Code de 4 chiffres, différent du code de suppression général, demandé avant de supprimer une facture (proforma ou définitive). Seules les personnes qui le connaissent peuvent supprimer une facture.</p>
   <p>${S.codeSupprFac?'<span class="tag paid">Code des factures actif</span>':'<span class="tag unpaid">Aucun code pour le moment : il sera demandé à la première suppression d’une facture</span>'}</p>

@@ -359,10 +359,10 @@ const IC = {
   trc:'<path d="M2 18h11v-5H6l-2 3H2z"/><circle cx="5" cy="19.5" r="1.5"/><circle cx="11" cy="19.5" r="1.5"/><path d="M13 13l4-7 3 2-1 3h3l-1 4h-3"/><path d="M8 13V9h4l1 4"/>',
   par:'<circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M2 12h3M19 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1"/>'
 };
-const NAV = [['menu','Menu principal','menu'],['home','Accueil','home'],['facture','Facture','fac'],['registre','Registre','reg'],['charges','Charges','chg'],['employes','Employés','emp'],['paie','Paie','pay'],['pdg','PDG','pdg'],['tracto','Tractopelle','trc'],['rapports','Rapports','rap'],['param','Paramètres','par']];
+const NAV = [['menu','Menu principal','menu'],['home','Accueil','home'],['facture','Facture','fac'],['registre','Registre','reg'],['charges','Charges','chg'],['employes','Employés','emp'],['paie','Paie','pay'],['pdg','PDG','pdg'],['tracto','Tractopelle','trc'],['param','Paramètres','par']];
 const svg = k => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${IC[k]}</svg>`;
 let view = 'menu';
-const VERSION_APP='2.0.84';
+const VERSION_APP='2.0.85';
 /* Créateur du logiciel : coordonnées fixes, intégrées au code (identiques dans chaque installation, non modifiables) */
 const CREATEUR={nom:'ALI DAÏM',email:'daim3575@gmail.com',tels:['+269 323 05 70','+269 432 29 14']};
 const waLien=t=>'https://wa.me/'+t.replace(/\D/g,'');
@@ -890,7 +890,6 @@ function vHome(m){
       <tr><td>+ Remboursements du PDG</td><td class="r num">${money(st.remb)}</td></tr>
       <tr><td><b>= Résultat du mois (solde)</b></td><td class="r num"><b>${money(st.res)}</b></td></tr>
     </tbody></table></div>
-    <div class="btns" style="margin-top:.8rem"><button class="btn" onclick="rp.mode='mois';rp.mois='${p}';go('rapports')">Voir le compte de résultat et le bilan complets</button></div>
   </div>
   ${PDG.some(t=>resteP(t)>0)?`<div class="card"><h2>Compte du PDG</h2><div class="kpis"><div class="kpi unpaid"><small>Reste à rembourser par ${h(S.responsable||'le PDG')}</small><b class="num">${money(PDG.reduce((s,t)=>s+resteP(t),0))}</b></div></div><div class="btns" style="margin-top:.8rem"><button class="btn" onclick="go('pdg')">Voir le détail</button></div></div>`:''}
   <div class="card"><h2>Dernières factures</h2>${last.length?tableFac(last):'<div class="empty">Aucune facture pour l’instant. Créez la première avec le bouton « Nouvelle facture ».</div>'}</div>
@@ -1703,7 +1702,7 @@ async function confirmerImport(){
   modalPdg(`<div class="head" style="margin-bottom:.6rem"><h2 style="margin:0">Import terminé</h2><button class="btn" onclick="this.closest('.modal').remove()">Fermer</button></div>
     <p>${fac.length} facture(s) payée(s) ajoutée(s) au registre, ${chg.length} charge(s) réparties en fixes et variables, ${pdgNew.length} emprunt(s) du PDG avec leur reçu.</p>
     ${nonAff>0?`<p class="muted">${money(nonAff)} de remboursements n’ont pas trouvé d’emprunt à rembourser à leur date ; ils n’ont pas été comptés.</p>`:''}
-    <div class="btns"><button class="btn pri" onclick="this.closest('.modal').remove();go('registre')">Voir le registre</button><button class="btn" onclick="this.closest('.modal').remove();go('rapports')">Voir les rapports</button><button class="btn" onclick="this.closest('.modal').remove();go('pdg')">Voir la page PDG</button></div>`);
+    <div class="btns"><button class="btn pri" onclick="this.closest('.modal').remove();go('registre')">Voir le registre</button><button class="btn" onclick="this.closest('.modal').remove();go('pdg')">Voir la page PDG</button></div>`);
   render();
 }
 async function retirerImport(){
@@ -3759,7 +3758,7 @@ function statsHTML(){
     ${TC.map(([c,x],i)=>`<tr><td>${i+1}</td><td>${h(c)}</td><td class="r">${x.n}</td><td class="r num">${money(x.t)}</td><td class="r">${st.ttc?Math.round(x.t/st.ttc*100):0} %</td></tr>`).join('')}</tbody></table></div>`:'<div class="empty">Aucun client sur cette période.</div>'}</div>
   ${depensesCard(st,titre)}`;
 }
-function bilanPretCard(){
+function bilanPretCard(){ return ''; /* page Rapports supprimée (10/11/2026) */
   const now=ymNow(), pm=prevP(now), s=stats(pm), an=now.slice(5)==='01'?String(+now.slice(0,4)-1):'';
   if(!s.fs.length&&!s.cs.length&&!an) return '';
   return `<div class="card"><h2>Bilans automatiques</h2><p style="margin-top:0">Le bilan de <b>${titreP(pm)}</b> est prêt : résultat ${s.res<0?'en perte de':'en bénéfice de'} <b class="num" style="color:${s.res<0?'var(--unpaid)':'var(--paid)'}">${money(Math.abs(s.res))}</b>.</p>
@@ -4215,9 +4214,6 @@ function vMenu(m){
   ${isAdmin()?`<div class="card"><h2>Accès rapides</h2><div class="btns">
     <button class="btn pri" onclick="go('facture')">+ Nouvelle facture</button>
     <button class="btn" onclick="go('paie')">Paie de fin de mois</button>
-    <button class="btn" onclick="rp.mode='jour';go('rapports')">Rapport journalier</button>
-    <button class="btn" onclick="rp.mode='mois';rp.mois=ymNow();go('rapports')">Bilan du mois</button>
-    <button class="btn" onclick="rp.mode='stats';go('rapports')">Statistiques</button>
     ${typeof sauvegarder==='function'?'<button class="btn" onclick="sauvegarder()">Sauvegarder les données</button>':''}
     ${USER?'<button class="btn" onclick="deconnexion()">Se déconnecter</button>':''}</div></div>`:`<div class="btns"><button class="btn" onclick="deconnexion()">Se déconnecter</button></div>`}`;
 }

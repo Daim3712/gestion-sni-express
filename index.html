@@ -360,10 +360,10 @@ const IC = {
   wus:'<path d="M3 21h18M5 21V10l7-6 7 6v11M9 21v-6h6v6M9 11h.01M15 11h.01"/>',
   par:'<circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M2 12h3M19 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1"/>'
 };
-const NAV = [['menu','Menu principal','menu'],['home','Accueil','home'],['facture','Facture','fac'],['registre','Registre','reg'],['charges','Charges','chg'],['employes','Employés','emp'],['paie','Paie','pay'],['pdg','PDG','pdg'],['tracto','Tractopelle','trc'],['wusu','Wusukani Wamasiwa','wus'],['param','Paramètres','par']];
+const NAV = [['menu','Menu principal','menu'],['home','Accueil','home'],['facture','Facture','fac'],['registre','Registre','reg'],['charges','Charges','chg'],['employes','Employés','emp'],['paie','Paie','pay'],['pdg','PDG','pdg'],['compte','Compte SNI','rap'],['tracto','Tractopelle','trc'],['wusu','Wusukani Wamasiwa','wus'],['param','Paramètres','par']];
 const svg = k => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${IC[k]}</svg>`;
 let view = 'menu';
-const VERSION_APP='2.0.86';
+const VERSION_APP='2.0.87';
 /* Créateur du logiciel : coordonnées fixes, intégrées au code (identiques dans chaque installation, non modifiables) */
 const CREATEUR={nom:'ALI DAÏM',email:'daim3575@gmail.com',tels:['+269 323 05 70','+269 432 29 14']};
 const waLien=t=>'https://wa.me/'+t.replace(/\D/g,'');
@@ -858,7 +858,7 @@ function render(){
   const m=document.getElementById('main');
   if(LOCKED){ vLogin(m); return; }
   if(!autorise(view)){ view='facture'; if(!draft) newDraft(); }
-  ({menu:vMenu,home:vHome,facture:vFacture,registre:vRegistre,charges:vCharges,employes:vEmployes,paie:vPaie,pdg:vPdg,tracto:vTracto,wusu:vWusu,rapports:vRapports,param:vParam})[view](m);
+  ({menu:vMenu,home:vHome,facture:vFacture,registre:vRegistre,charges:vCharges,employes:vEmployes,paie:vPaie,pdg:vPdg,compte:vCompteSni,tracto:vTracto,wusu:vWusu,rapports:vRapports,param:vParam})[view](m);
   try{ outilsCartes(); }catch(e){}
 }
 
@@ -3516,7 +3516,6 @@ function vRapports(m){
     ${rp.mode==='bilans'?bilansFiltres():rp.mode==='pdg'?pdgRapFiltres():rp.mode==='stats'?statsFiltres():rp.mode==='jour'?'</div>'+rjFiltres()+'<div class="row">':rp.mode==='mois'?choixMoisAn('rpm',rp.mois,'rp.mois=v||rp.mois;render()')
     :`<label class="f">Année<input type="number" min="2000" max="2100" value="${rp.an}" onchange="rp.an=this.value||rp.an;render()"></label>`}
   </div></div>
-  ${sniCompteCard()}
   <div id="rep">${reportHTML()}</div>`;
 }
 /* ============ WUSUKANI WAMASIWA : partie à part (ventes / travaux, dépenses, reçus, tableau de compte du mois) ============
@@ -3677,6 +3676,8 @@ function wuCompteHTML(p){
    Crédit = factures définitives encaissées (TTC) + remboursements du PDG (partie SNI) ;
    Débit = charges fixes, charges variables, salaires, emprunts du PDG (partie SNI). Solde = crédit − débit. */
 let scP=ymNow();
+/* Page « Compte SNI » : toutes les transactions de SNI du mois (factures payées, charges, salaires, PDG partie SNI) */
+function vCompteSni(m){ m.innerHTML=`<div class="head"><div><h1>Compte SNI</h1><p>Toutes les transactions de SNI du mois : factures payées, charges fixes et variables, salaires, emprunts et remboursements du PDG (caisse SNI)</p></div></div>${sniCompteCard()}`; }
 const SC_COLS=['Date / heure','N°','Client','Désignation','Déjeuner','Qté','P-U','Montant','Débit (dépenses)','Crédit (encaissé)','Solde (crédit − débit)','Reçu'];
 const estDej=c=>/d[ée]jeuner|repas/i.test([c.cat,c.des,c.note].join(' '));
 function sniLignes(p){
@@ -4344,7 +4345,7 @@ function ouvrirSession(){ if(S.connOffV!==5){ S.connexionOff=false; S.adminSeul=
   if(connOff()){ let id=''; try{ id=sessionStorage.getItem('sni_user')||''; }catch(e){} USER=L.find(c=>c.id===id)||L.find(c=>c.role==='admin')||L[0]; LOCKED=false; impPar=USER.nom; return; }
   let id=''; try{ id=sessionStorage.getItem('sni_user')||''; }catch(e){} USER=L.find(c=>c.id===id)||null; LOCKED=!USER; if(USER) impPar=USER.nom; }
 /* ============ Menu principal ============ */
-const MENU_DESC={home:'Tableau de bord et bilan du mois',facture:'Créer une facture proforma ou définitive',registre:'Toutes les factures et les reçus',charges:'Dépenses fixes et variables',employes:'Fiches des employés',paie:'Bulletins de paye du mois',pdg:'',tracto:'Heures de travail, clients, paie du chauffeur',wusu:'Ventes, dépenses et compte à part',rapports:'Bilans, journalier, statistiques',param:'Identité, comptes, sécurité, sauvegarde'};
+const MENU_DESC={home:'Tableau de bord et bilan du mois',facture:'Créer une facture proforma ou définitive',registre:'Toutes les factures et les reçus',charges:'Dépenses fixes et variables',employes:'Fiches des employés',paie:'Bulletins de paye du mois',pdg:'',compte:'Tableau de compte SNI de fin de mois',tracto:'Heures de travail, clients, paie du chauffeur',wusu:'Ventes, dépenses et compte à part',rapports:'Bilans, journalier, statistiques',param:'Identité, comptes, sécurité, sauvegarde'};
 function menuChiffre(k){
   const now=ymNow(), st=stats(now);
   try{ switch(k){

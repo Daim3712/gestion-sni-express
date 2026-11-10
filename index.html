@@ -362,7 +362,7 @@ const IC = {
 const NAV = [['menu','Menu principal','menu'],['home','Accueil','home'],['facture','Facture','fac'],['registre','Registre','reg'],['charges','Charges','chg'],['employes','Employés','emp'],['paie','Paie','pay'],['pdg','PDG','pdg'],['tracto','Tractopelle','trc'],['rapports','Rapports','rap'],['param','Paramètres','par']];
 const svg = k => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${IC[k]}</svg>`;
 let view = 'menu';
-const VERSION_APP='2.0.83';
+const VERSION_APP='2.0.84';
 /* Créateur du logiciel : coordonnées fixes, intégrées au code (identiques dans chaque installation, non modifiables) */
 const CREATEUR={nom:'ALI DAÏM',email:'daim3575@gmail.com',tels:['+269 323 05 70','+269 432 29 14']};
 const waLien=t=>'https://wa.me/'+t.replace(/\D/g,'');
@@ -3516,7 +3516,62 @@ function vRapports(m){
     ${rp.mode==='bilans'?bilansFiltres():rp.mode==='pdg'?pdgRapFiltres():rp.mode==='stats'?statsFiltres():rp.mode==='jour'?'</div>'+rjFiltres()+'<div class="row">':rp.mode==='mois'?choixMoisAn('rpm',rp.mois,'rp.mois=v||rp.mois;render()')
     :`<label class="f">Année<input type="number" min="2000" max="2100" value="${rp.an}" onchange="rp.an=this.value||rp.an;render()"></label>`}
   </div></div>
+  ${sniCompteCard()}
   <div id="rep">${reportHTML()}</div>`;
+}
+/* ============ Tableau de compte SNI de fin de mois ============
+   Crédit = factures définitives encaissées (TTC) + remboursements du PDG (partie SNI) ;
+   Débit = charges fixes, charges variables, salaires, emprunts du PDG (partie SNI). Solde = crédit − débit. */
+let scP=ymNow();
+const SC_COLS=['Date / heure','N°','Client','Désignation','Déjeuner','Qté','P-U','Montant','Débit (dépenses)','Crédit (encaissé)','Solde (crédit − débit)','Reçu'];
+const estDej=c=>/d[ée]jeuner|repas/i.test([c.cat,c.des,c.note].join(' '));
+function sniLignes(p){
+  const R=resultatDetail(d=>ym(d)===p), L=[];
+  R.D.forEach(f=>{ const t=calc(f), li=lignesFacture(f);
+    L.push({k:'f',x:f,date:f.date,num:f.num,client:f.client||'—',des:li.map(l=>l.d||'—'),qte:li.map(l=>n0(l.qte)),pu:li.map(l=>n0(l.pu)),mt:li.map(l=>n0(l.qte)*n0(l.pu)-n0(l.remise)),dej:0,deb:0,cre:t.ttc,recu:f.recu||'',
+      note:[t.rem?'Remise '+pctTxt(remTot(t)):'',n0(f.tva)?'TVA '+n0(f.tva)+' %':''].filter(Boolean).join(' · ')}); });
+  const ch=(c,lab)=>{ const d=estDej(c); L.push({k:'c',x:c,date:c.date,num:'—',client:c.four||'—',des:[lab+(c.des?' – '+c.des:c.note?' – '+c.note:'')],qte:c.qte?[n0(c.qte)]:[],pu:c.pu?[n0(c.pu)]:[],mt:[n0(c.montant)],dej:d?n0(c.montant):0,deb:n0(c.montant),cre:0,recu:''}); };
+  R.F.forEach(c=>ch(c,c.type==='electricite'?'Électricité (charge fixe)':'Charge fixe'));
+  R.V.forEach(c=>ch(c,'Charge variable'+(c.cat?' – '+c.cat:'')));
+  R.Sa.forEach(c=>ch(c,'Paiement (salaire)'));
+  R.P.forEach(t=>L.push({k:'p',x:t,date:t.date,num:t.num||'—',client:S.responsable||'PDG',des:['Emprunt du PDG – '+typeP(t)+' – '+motifP(t)],qte:[],pu:[],mt:[n0(t.montant)],dej:0,deb:n0(t.montant),cre:0,recu:t.num||''}));
+  R.Rb.forEach(r=>L.push({k:'r',x:r.dette,date:r.date,num:r.num||'—',client:S.responsable||'PDG',des:[nomRemb(r)+' du PDG – reçu '+(r.dette.num||'')],qte:[],pu:[],mt:[n0(r.montant)],dej:0,deb:0,cre:n0(r.montant),recu:r.num||''}));
+  L.sort((a,b)=>String(a.date).localeCompare(String(b.date))); let cum=0; L.forEach(l=>{ l.solde=l.cre-l.deb; cum+=l.solde; l.cum=cum; });
+  return {L,R,T:{fx:R.fixes,va:R.variables,sa:R.salaires,pdg:R.pdg,rb:R.remb,dej:L.reduce((s,l)=>s+l.dej,0),deb:R.fixes+R.variables+R.salaires+R.pdg,cre:R.recettes+R.remb}};
+}
+const scTitre=p=>'Tableau de compte SNI du mois de '+moisTxt(p).toUpperCase();
+function sniCompteCard(){
+  const {L,T}=sniLignes(scP), bloc=a=>a.length?a.map(v=>typeof v==='number'?fmt(v):h(v)).join('<br>'):'—';
+  return `<div class="card" id="sniCompte"><div class="head" style="margin-bottom:.4rem"><div><h2 style="margin:0">${h(scTitre(scP))}</h2>
+    <p class="muted" style="margin:.2rem 0 0"><b>Crédit</b> = factures payées (définitives) + remboursements du PDG · <b>Débit</b> = charges fixes, charges variables, salaires, emprunts du PDG (partie SNI) · <b>Solde</b> = crédit − débit</p></div>
+    <div class="btns"><button class="btn pri" onclick="ouvrirRecu(scTitre(scP),sniCompteHTML(scP),'compte-sni-'+scP+'.pdf')">Aperçu</button><button class="btn" onclick="printHTML(sniCompteHTML(scP))">Imprimer</button><button class="btn" onclick="exportPDF(sniCompteHTML(scP),'compte-sni-${scP}.pdf')">PDF</button></div></div>
+    <div class="row" style="margin-bottom:.8rem">${choixMoisAn('scm',scP,'scP=v||scP;render()')}</div>
+    ${L.length?`<div class="scroll"><table class="cpt"><thead><tr>${SC_COLS.map((c,i)=>`<th${i>=4&&i<=10?' class="r"':''}>${c}</th>`).join('')}</tr></thead><tbody>
+    ${L.map(l=>`<tr${l.k==='f'?'':' style="background:var(--soft,#f7f8fb)"'}><td>${dt(l.date)}</td><td>${h(l.num)}</td><td>${l.k==='f'?'<b>'+h(l.client)+'</b>':h(l.client)}</td><td>${bloc(l.des)}${l.note?'<br><small class="muted">'+h(l.note)+'</small>':''}</td>
+      <td class="r num">${l.dej?money(l.dej):'—'}</td><td class="r num">${bloc(l.qte)}</td><td class="r num">${bloc(l.pu)}</td><td class="r num">${bloc(l.mt)}</td><td class="r num">${l.deb?'<b>'+money(l.deb)+'</b>':'—'}</td><td class="r num">${l.cre?'<b>'+money(l.cre)+'</b>':'—'}</td><td class="r num"><b>${sgn(l.solde)}</b></td>
+      <td>${l.k==='f'?(l.recu?`<button class="btn sm" onclick="voirRecuFac('${l.x.id}')">${h(l.recu)}</button>`:'—'):l.k==='p'?`<button class="btn sm" onclick="voirRecu('${l.x.id}')">${h(l.recu)}</button>`:l.k==='r'?h(l.recu||'—'):'<span class="tag">Charge</span>'}</td></tr>`).join('')}
+    <tr style="font-weight:700"><td colspan="4">Total</td><td class="r num">${money(T.dej)}</td><td colspan="3"></td><td class="r num">${money(T.deb)}</td><td class="r num">${money(T.cre)}</td><td class="r num">${sgn(T.cre-T.deb)}</td><td></td></tr></tbody></table></div>`
+    :`<div class="empty">Aucune opération en ${h(moisTxt(scP))}.</div>`}
+    <div class="kpis" style="margin-top:.8rem"><div class="kpi amber"><small>Autres charges fixes</small><b class="num">${money(T.fx)}</b></div><div class="kpi amber"><small>Charges variables</small><b class="num">${money(T.va)}</b></div><div class="kpi amber"><small>Paiement (salaire)</small><b class="num">${money(T.sa)}</b></div><div class="kpi amber"><small>Emprunts du PDG</small><b class="num">${money(T.pdg)}</b></div><div class="kpi paid"><small>Remboursements du PDG</small><b class="num">${money(T.rb)}</b></div><div class="kpi unpaid"><small>Total débit</small><b class="num">${money(T.deb)}</b></div><div class="kpi paid"><small>Total crédit</small><b class="num">${money(T.cre)}</b></div><div class="kpi ${T.cre-T.deb>=0?'paid':'unpaid'}"><small>Solde (crédit − débit)</small><b class="num">${money(T.cre-T.deb)}</b></div></div></div>`;
+}
+function sniCompteHTML(p){
+  const {L,T}=sniLignes(p), B='#1F4E79';
+  const c='style="padding:5px 4px;border:1px solid #333;font-size:9.5px;vertical-align:top"', r='style="padding:5px 4px;border:1px solid #333;font-size:9.5px;text-align:right;white-space:nowrap;vertical-align:top"', th=`style="padding:6px 4px;border:1px solid #333;font-size:10px;background:${B};color:#fff;text-align:left"`;
+  const bloc=a=>a.length?a.map(v=>typeof v==='number'?fmt(v):h(v)).join('<br>'):'';
+  const tl=(l,v)=>`<tr><td style="padding:6px;border:1px solid #333;font-size:11px;width:68%">${l}</td><td style="padding:6px;border:1px solid #333;font-size:11px;text-align:right">${v}</td></tr>`;
+  return `${PAYSAGE}<div class="sheet paysage">
+    <div style="display:flex;justify-content:space-between;align-items:flex-end;border-bottom:2px solid ${B};padding-bottom:8px">
+      <div>${IMG.logo?`<img src="${IMG.logo}" alt="Logo" style="max-height:80px;max-width:210px;display:block;margin-bottom:8px">`:''}<b style="font-size:13px">${h(S.nom)}</b><br><span style="font-size:12px">${h(S.adresse)}${S.tel?'<br>Tél. : '+h(S.tel):''}</span></div>
+      <div style="text-align:right"><div style="font-size:17px;font-weight:700;color:${B}">TABLEAU DE COMPTE SNI FIN DE MOIS</div><div style="font-size:12px">Édité le ${dt(new Date().toISOString())}<br>Par ${h(imprimeur()||nomAdmin()||'—')}</div></div></div>
+    <div style="font-size:22px;font-weight:700;color:${B};margin:14px 0 12px">${h(scTitre(p))}</div>
+    <table style="border-collapse:collapse;width:100%"><thead><tr>${SC_COLS.map(x=>`<th ${th}>${x}</th>`).join('')}</tr></thead><tbody>
+    ${L.map(l=>`<tr><td ${c}>${dt(l.date)}</td><td ${c}>${h(l.num)}</td><td ${c}>${h(l.client)}</td><td ${c}>${bloc(l.des)}${l.note?'<br><i>'+h(l.note)+'</i>':''}</td><td ${r}>${l.dej?fmt(l.dej):''}</td><td ${r}>${bloc(l.qte)}</td><td ${r}>${bloc(l.pu)}</td><td ${r}>${bloc(l.mt)}</td><td ${r}>${l.deb?fmt(l.deb):''}</td><td ${r}>${l.cre?fmt(l.cre):''}</td><td ${r}><b>${fmt(l.solde)}</b></td><td ${c}>${h(l.recu||'')}</td></tr>`).join('')||`<tr>${SC_COLS.map(()=>`<td ${c}>&nbsp;</td>`).join('')}</tr>`}
+    ${L.length?`<tr style="font-weight:700;background:#E8EEF5"><td ${c} colspan="4">Total en KMF</td><td ${r}>${fmt(T.dej)}</td><td ${c} colspan="3"></td><td ${r}>${fmt(T.deb)}</td><td ${r}>${fmt(T.cre)}</td><td ${r}>${fmt(T.cre-T.deb)}</td><td ${c}></td></tr>`:''}</tbody></table>
+    <table style="border-collapse:collapse;width:100%;margin-top:0">
+      ${tl('Autres charges fixes',money(T.fx))}${tl('Charges variables',money(T.va))}${tl('Paiement ( Salaire )',money(T.sa))}${tl('Emprunts du PDG',money(T.pdg))}${tl('Remboursements du PDG',money(T.rb))}
+      ${tl('Total débit',money(T.deb))}${tl('Total crédit',money(T.cre))}${tl('<b>Solde (crédit − débit)</b>','<b>'+money(T.cre-T.deb)+'</b>')}</table>
+    <div class="lettres" style="margin-top:10px">${T.cre-T.deb>=0?'Bénéfice':'Perte'} de SNI pour ${h(moisTxt(p))} : <b>${h(enLettres(Math.abs(T.cre-T.deb)))}</b> (soit ${eur(Math.abs(T.cre-T.deb))}).</div>
+    </div>`;
 }
 /* ============ Rapport journalier ============ */
 const locD = s => { s=String(s||''); if(s.length<=10) return s; const d=new Date(s); return isNaN(d)?s.slice(0,10):d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate()); };

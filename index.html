@@ -363,7 +363,7 @@ const IC = {
 const NAV = [['menu','Menu principal','menu'],['home','Accueil','home'],['facture','Facture','fac'],['registre','Registre','reg'],['charges','Charges','chg'],['employes','Employés','emp'],['paie','Paie','pay'],['pdg','PDG','pdg'],['compte','Compte SNI','rap'],['tracto','Tractopelle','trc'],['wusu','Wusukani Wamasiwa','wus'],['param','Paramètres','par']];
 const svg = k => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${IC[k]}</svg>`;
 let view = 'menu';
-const VERSION_APP='2.0.90';
+const VERSION_APP='2.0.91';
 /* Créateur du logiciel : coordonnées fixes, intégrées au code (identiques dans chaque installation, non modifiables) */
 const CREATEUR={nom:'ALI DAÏM',email:'daim3575@gmail.com',tels:['+269 323 05 70','+269 432 29 14']};
 const waLien=t=>'https://wa.me/'+t.replace(/\D/g,'');
@@ -3528,7 +3528,25 @@ const wuPaye=x=>(x.paiements||[]).reduce((s,p)=>s+n0(p.montant),0);
 const wuReste=x=>Math.max(0,n0(x.montant)-wuPaye(x));
 function wuNum(pre,iso){ const an=String(iso||auj()).slice(0,4), tous=WUS.flatMap(x=>[x.num,...(x.paiements||[]).map(p=>p.num)]);
   const n=tous.filter(s=>String(s||'').startsWith(pre+'-'+an+'-')).reduce((m,s)=>Math.max(m,parseInt(String(s).split('-').pop(),10)||0),0); return pre+'-'+an+'-'+String(n+1).padStart(4,'0'); }
-function wuCalc(){ const q=n0(val('wv_q')), pu=n0(val('wv_pu')), el=document.getElementById('wv_tot'); if(el) el.textContent=money(Math.round(q*pu)); const p=val('wv_pay'), a=document.getElementById('wv_avw'); if(a) a.style.display=p==='partiel'?'':'none'; }
+/* Lignes de NOUVEAU Impression (comme la facture SNI) : désignation, quantité, prix unitaire, ou forfait (montant global) */
+let wuL=[{d:'',qte:1,pu:'',forfait:false}];
+const wuMtL=l=>l.forfait?Math.round(n0(l.pu)):Math.round(n0(l.qte)*n0(l.pu));
+const wuLig=x=>Array.isArray(x.lignes)&&x.lignes.length?x.lignes:[{d:x.des,qte:x.qte,pu:x.pu,forfait:false}];
+const wuQteTxt=l=>l.forfait?'Forfait':fmt(l.qte);
+function wuLinesHTML(){
+  return wuL.map((l,i)=>`<div class="row" style="margin-top:.5rem;align-items:flex-end">
+    <label class="f">Désignation${i?' '+(i+1):''}<input value="${h(l.d)}" placeholder="${l.forfait?'Ex. : forfait mise en page':'Ex. : impression A4 couleur'}" oninput="wuSetL(${i},'d',this.value)"></label>
+    ${l.forfait?'<label class="f" style="flex:0 0 110px">Qté<input value="Forfait" disabled></label>':`<label class="f" style="flex:0 0 110px">Qté<input type="number" inputmode="decimal" min="0" value="${h(l.qte)}" oninput="wuSetL(${i},'qte',this.value)"></label>`}
+    <label class="f" style="flex:0 0 160px">${l.forfait?'Montant du forfait':'Prix unitaire'} (KMF)<input type="number" inputmode="numeric" min="0" value="${h(l.pu)}" oninput="wuSetL(${i},'pu',this.value)"></label>
+    <div class="f" style="flex:0 0 110px;text-align:right"><small class="muted">Montant</small><b class="num" id="wv_m${i}">${money(wuMtL(l))}</b></div>
+    ${wuL.length>1?`<button class="btn sm danger" style="flex:0 0 auto" title="Retirer la ligne" onclick="wuDelL(${i})">×</button>`:''}</div>
+    <label style="display:inline-flex;gap:.4rem;align-items:center;margin-top:.3rem;font-size:.9rem"><input type="checkbox" ${l.forfait?'checked':''} onchange="wuSetL(${i},'forfait',this.checked)"> Forfait</label>`).join('');
+}
+function wuDrawL(){ const b=document.getElementById('wv_lines'); if(b) b.innerHTML=wuLinesHTML(); wuCalc(); }
+function wuSetL(i,k,v){ const l=wuL[i]; if(!l) return; l[k]=v; if(k==='forfait'){ if(v){ l.qte=1; } wuDrawL(); return; } const m=document.getElementById('wv_m'+i); if(m) m.textContent=money(wuMtL(l)); wuCalc(); }
+function wuAddL(f){ wuL.push({d:'',qte:1,pu:'',forfait:!!f}); wuDrawL(); }
+function wuDelL(i){ wuL.splice(i,1); if(!wuL.length) wuL=[{d:'',qte:1,pu:'',forfait:false}]; wuDrawL(); }
+function wuCalc(){ const el=document.getElementById('wv_tot'); if(el) el.textContent=money(wuL.reduce((s,l)=>s+wuMtL(l),0)); const p=val('wv_pay'), a=document.getElementById('wv_avw'); if(a) a.style.display=p==='partiel'?'':'none'; }
 function vWusu(m){
   const cats=[...new Set(WUS.filter(x=>x.kind==='charge').map(x=>x.categorie).filter(Boolean))];
   m.innerHTML=`<div class="head"><div><h1>${WNOM}</h1><p>Partie à part : ventes et travaux, dépenses, reçus et tableau de compte du mois, séparés de SNI et du tractopelle</p></div></div>
@@ -3538,7 +3556,9 @@ function vWusu(m){
     <div class="row"><label class="f" style="flex:0 0 auto">Date<input id="wv_d" type="date" value="${auj()}"></label><label class="f">Client<input id="wv_c" placeholder="Nom du client" list="wu_cl"></label><datalist id="wu_cl">${[...new Set(WUS.filter(x=>x.kind==='vente').map(x=>x.client))].map(c=>`<option value="${h(c)}">`).join('')}</datalist><label class="f">Téléphone (facultatif)<input id="wv_t"></label></div>
     <div class="row" style="margin-top:.6rem"><label class="f" style="flex:0 0 240px">Cellule de<select id="wv_cel" onchange="document.getElementById('wv_celaw').style.display=this.value==='Autre'?'':'none'"><option value="">— Choisir la cellule —</option>${WU_CELL.map(c=>`<option>${c}</option>`).join('')}</select></label><span id="wv_celaw" style="display:none;flex:1"><label class="f">Nom de l’autre cellule<input id="wv_cela" placeholder="Tapez le nom"></label></span>
       <label class="f" style="flex:0 0 240px">Type d’impression<select id="wv_typ" onchange="document.getElementById('wv_typaw').style.display=this.value==='Autre'?'':'none'"><option value="">— Choisir le type —</option>${WU_TYP.map(c=>`<option>${c}</option>`).join('')}</select></label><span id="wv_typaw" style="display:none;flex:1"><label class="f">Autre type d’impression<input id="wv_typa" placeholder="Tapez le type"></label></span></div>
-    <div class="row" style="margin-top:.6rem"><label class="f">Désignation<input id="wv_des" placeholder="Ex. : livraison, service, article vendu"></label><label class="f" style="flex:0 0 110px">Qté<input id="wv_q" type="number" inputmode="decimal" min="0" value="1" oninput="wuCalc()"></label><label class="f" style="flex:0 0 160px">Prix unitaire (KMF)<input id="wv_pu" type="number" inputmode="numeric" min="0" oninput="wuCalc()"></label><div class="f" style="flex:0 0 auto"><small class="muted">Montant</small><b id="wv_tot" class="num" style="font-size:1.15rem">0 KMF</b></div></div>
+    <h3 style="margin:1rem 0 .4rem">Désignation</h3><div id="wv_lines">${wuLinesHTML()}</div>
+    <div class="btns" style="margin-top:.6rem;padding-top:.7rem;border-top:1px dashed var(--line,#ccd)"><button class="btn" onclick="wuAddL(false)">+ Ajouter une ligne</button><button class="btn" onclick="wuAddL(true)">+ Ajouter une ligne forfaitaire</button>
+      <div style="margin-left:auto;text-align:right"><small class="muted">Montant total</small><br><b id="wv_tot" class="num" style="font-size:1.25rem">0 KMF</b></div></div>
     <div class="row" style="margin-top:.6rem"><label class="f" style="flex:0 0 220px">Paiement<select id="wv_pay" onchange="wuCalc()"><option value="paye">Payé en totalité</option><option value="partiel">Avance (payé en partie)</option><option value="credit">À crédit (pas encore payé)</option></select></label><span id="wv_avw" style="display:none;flex:0 0 180px"><label class="f">Montant reçu (KMF)<input id="wv_av" type="number" inputmode="numeric" min="0"></label></span><label class="f" style="flex:0 0 220px">Moyen<select id="wv_moy">${MODES.map(x=>`<option>${x}</option>`).join('')}</select></label></div>
     <div class="btns" style="margin-top:.7rem"><button class="btn pri" onclick="wuAddVente()">Enregistrer et créer la facture et le reçu</button></div></div>
   <div class="card"><h2>Ajouter une dépense</h2>
@@ -3551,10 +3571,12 @@ function vWusu(m){
   wuCalc();
 }
 async function wuAddVente(){
-  const d=val('wv_d')||auj(), client=String(val('wv_c')||'').trim(), des=String(val('wv_des')||'').trim(), q=n0(val('wv_q')), pu=n0(val('wv_pu')), mt=Math.round(q*pu), pay=val('wv_pay');
+  const d=val('wv_d')||auj(), client=String(val('wv_c')||'').trim(), pay=val('wv_pay');
+  const lignes=wuL.map(l=>({d:String(l.d||'').trim(),qte:l.forfait?1:n0(l.qte),pu:n0(l.pu),forfait:!!l.forfait})).filter(l=>l.d||l.pu);
   if(!client){ toast('Indiquez le client'); document.getElementById('wv_c').focus(); return; }
-  if(!des){ toast('Indiquez la désignation'); document.getElementById('wv_des').focus(); return; }
-  if(q<=0||pu<=0){ toast('Indiquez la quantité et le prix unitaire'); return; }
+  if(!lignes.length){ toast('Indiquez au moins une ligne (désignation et prix)'); return; }
+  const bad=lignes.findIndex(l=>!l.d||l.pu<=0||(!l.forfait&&l.qte<=0)); if(bad>=0){ toast('Ligne '+(bad+1)+' : indiquez la désignation, '+(lignes[bad].forfait?'le montant du forfait':'la quantité et le prix unitaire')); return; }
+  const mt=lignes.reduce((s,l)=>s+wuMtL(l),0), des=lignes.map(l=>l.d).join(' + '), q=lignes.length===1?lignes[0].qte:lignes.length, pu=lignes.length===1?lignes[0].pu:mt;
   const cel=val('wv_cel')==='Autre'?String(val('wv_cela')||'').trim():val('wv_cel');
   if(!cel){ toast(val('wv_cel')==='Autre'?'Tapez le nom de la cellule':'Choisissez la cellule'); document.getElementById(val('wv_cel')==='Autre'?'wv_cela':'wv_cel').focus(); return; }
   const typ=val('wv_typ')==='Autre'?String(val('wv_typa')||'').trim():val('wv_typ');
@@ -3562,8 +3584,8 @@ async function wuAddVente(){
   const recu=pay==='paye'?mt:pay==='partiel'?n0(val('wv_av')):0;
   if(pay==='partiel'&&(recu<=0||recu>=mt)){ toast('L’avance doit être entre 0 et '+money(mt)); document.getElementById('wv_av').focus(); return; }
   const date=new Date(d+'T'+new Date().toTimeString().slice(0,8)).toISOString(), num=wuNum('WMV',d);
-  const x={id:uid(),kind:'vente',date,num,client,tel:String(val('wv_t')||'').trim(),cellule:cel,typeImp:typ,des,qte:q,pu,montant:mt,moyen:val('wv_moy')||'Espèces',paiements:recu?[{id:uid(),num:num.replace('WMV','WMR'),date,montant:recu,moyen:val('wv_moy')||'Espèces'}]:[],par:imprimeur()||'',resp:S.wuResp||'',respTel:S.wuTel||''};
-  await put('wusu',x); journal(WNOM+' : vente '+num+' – '+client+' '+money(mt)); toast(recu>=mt?'Enregistré : payé – facture et reçu créés':'Enregistré, reste '+money(mt-recu)+' – facture et reçu créés'); wuP=ym(date); render(); wuDocs(x.id);
+  const x={id:uid(),kind:'vente',date,num,client,tel:String(val('wv_t')||'').trim(),cellule:cel,typeImp:typ,des,qte:q,pu,lignes,montant:mt,moyen:val('wv_moy')||'Espèces',paiements:recu?[{id:uid(),num:num.replace('WMV','WMR'),date,montant:recu,moyen:val('wv_moy')||'Espèces'}]:[],par:imprimeur()||'',resp:S.wuResp||'',respTel:S.wuTel||''};
+  wuL=[{d:'',qte:1,pu:'',forfait:false}]; await put('wusu',x); journal(WNOM+' : vente '+num+' – '+client+' '+money(mt)); toast(recu>=mt?'Enregistré : payé – facture et reçu créés':'Enregistré, reste '+money(mt-recu)+' – facture et reçu créés'); wuP=ym(date); render(); wuDocs(x.id);
 }
 /* Responsable de WUSUKANI WAMASIWA : nom et téléphone, imprimés sur les factures, les reçus et le tableau de compte */
 function wuRespCard(){
@@ -3583,7 +3605,7 @@ function wuFactureHTML(x){
   const paye=wuPaye(x), reste=wuReste(x), num=String(x.num).replace('WMV','WMF');
   return `<div class="sheet">${entete('FACTURE – '+WNOM,num,x.date)}
     <div class="meta"><div class="box"><small>Client</small><b>${h(x.client)}</b>${x.tel?'<br>Tél. : '+h(x.tel):''}${x.cellule?'<br>Cellule de : <b>'+h(x.cellule)+'</b>':''}</div><div class="box"><small>Responsable</small><b>${wuRespTxt(x)||'—'}</b></div><div class="box"><small>Statut</small><b style="color:${reste?'#C0392B':'#1E7B34'}">${reste?(paye?'Payé en partie':'Impayé'):'Payé'}</b></div></div>
-    <table style="margin-top:12px"><thead><tr><th>Désignation</th><th class="r">Qté</th><th class="r">Prix unitaire</th><th class="r">Montant</th></tr></thead><tbody><tr><td>${x.typeImp?'<b>'+h(x.typeImp)+'</b> – ':''}${h(x.des)}</td><td class="r">${fmt(x.qte)}</td><td class="r">${money(x.pu)}</td><td class="r">${money(x.montant)}</td></tr></tbody></table>
+    <table style="margin-top:12px"><thead><tr><th>Désignation</th><th class="r">Qté</th><th class="r">Prix unitaire</th><th class="r">Montant</th></tr></thead><tbody>${x.typeImp?`<tr><td colspan="4" style="background:#F3F6FA">Type d’impression : <b>${h(x.typeImp)}</b></td></tr>`:''}${wuLig(x).map(l=>`<tr><td>${h(l.d)}</td><td class="r">${wuQteTxt(l)}</td><td class="r">${l.forfait?'—':money(l.pu)}</td><td class="r">${money(wuMtL(l))}</td></tr>`).join('')}</tbody></table>
     <div class="tt"><div class="g"><span>Total à payer</span><span>${money(x.montant)}</span></div><div><span>Déjà payé</span><span>${money(paye)}</span></div><div><span>Reste à payer</span><span>${money(reste)}</span></div></div>
     <div class="lettres">Arrêtée la présente facture à la somme de : <b>${h(enLettres(x.montant))}</b>.</div>
     <div class="foot"><div class="stamp ${reste?'unpaid':'paid'}">${reste?(paye?'PAYÉ EN<br>PARTIE':'IMPAYÉ'):'PAYÉ'}</div>${signes()}</div>
@@ -3615,7 +3637,7 @@ function wuRecuHTML(x){
   const paye=wuPaye(x), reste=wuReste(x);
   return `<div class="sheet">${entete('REÇU – '+WNOM,x.num,x.date)}
     <div class="meta"><div class="box"><small>Client</small><b>${h(x.client)}</b>${x.tel?'<br>'+h(x.tel):''}${x.cellule?'<br>Cellule de : <b>'+h(x.cellule)+'</b>':''}</div><div class="box"><small>Moyen de paiement</small><b>${h((x.paiements||[]).slice(-1)[0]?.moyen||x.moyen||'—')}</b></div><div class="box"><small>Statut</small><b style="color:${reste?'#C0392B':'#1E7B34'}">${reste?(paye?'Payé en partie':'Impayé'):'Payé'}</b></div></div>
-    <table style="margin-top:12px"><thead><tr><th>Désignation</th><th class="r">Qté</th><th class="r">Prix unitaire</th><th class="r">Montant</th></tr></thead><tbody><tr><td>${x.typeImp?'<b>'+h(x.typeImp)+'</b> – ':''}${h(x.des)}</td><td class="r">${fmt(x.qte)}</td><td class="r">${money(x.pu)}</td><td class="r">${money(x.montant)}</td></tr></tbody></table>
+    <table style="margin-top:12px"><thead><tr><th>Désignation</th><th class="r">Qté</th><th class="r">Prix unitaire</th><th class="r">Montant</th></tr></thead><tbody>${x.typeImp?`<tr><td colspan="4" style="background:#F3F6FA">Type d’impression : <b>${h(x.typeImp)}</b></td></tr>`:''}${wuLig(x).map(l=>`<tr><td>${h(l.d)}</td><td class="r">${wuQteTxt(l)}</td><td class="r">${l.forfait?'—':money(l.pu)}</td><td class="r">${money(wuMtL(l))}</td></tr>`).join('')}</tbody></table>
     ${(x.paiements||[]).length?`<table style="margin-top:10px"><thead><tr><th>Date du paiement</th><th>N° reçu</th><th>Moyen</th><th class="r">Montant reçu</th></tr></thead><tbody>${x.paiements.map(p=>`<tr><td>${dt(p.date)}</td><td>${h(p.num||'')}</td><td>${h(p.moyen||'')}</td><td class="r">${money(p.montant)}</td></tr>`).join('')}</tbody></table>`:''}
     <div class="tt"><div><span>Montant total</span><span>${money(x.montant)}</span></div><div><span>Déjà payé</span><span>${money(paye)}</span></div><div class="g"><span>Reste à payer</span><span>${money(reste)}</span></div></div>
     <div class="lettres">Nous avons reçu de ${h(x.client)} la somme de : <b>${h(enLettres(paye))}</b>${reste?', il reste à payer '+h(enLettres(reste)):''}.</div>
@@ -3686,7 +3708,7 @@ function wuCompteCard(){
     <div class="row" style="margin-bottom:.8rem">${choixMoisAn('wum',wuP,'wuP=v||wuP;render()')}<label class="f">Rechercher (client, désignation, n°)<input id="wu_q" value="${h(wuQ)}" placeholder="Tapez pour chercher" onchange="wuQ=this.value.trim();render()"></label><label class="f" style="flex:0 0 220px">Cellule<select onchange="wuCel=this.value;render()"><option value="">Toutes les cellules</option>${[...new Set([...WU_CELL.filter(c=>c!=='Autre'),...WUS.map(x=>x.cellule).filter(Boolean)])].map(c=>`<option ${wuCel===c?'selected':''}>${h(c)}</option>`).join('')}</select></label></div>
     ${L.length?`<div class="scroll"><table class="cpt"><thead><tr>${WU_COLS.map((c,i)=>`<th${i>=4&&i<=10?' class="r"':''}>${c}</th>`).join('')}<th>Statut</th><th></th></tr></thead><tbody>
     ${L.map(l=>{ const x=l.x, v=l.k==='v', pg=/^p[era]$/.test(l.k); return `<tr${v?'':' style="background:var(--soft,#f7f8fb)"'}><td>${dt(l.date)}</td><td>${h(wuNumL(l))}</td><td>${v||l.k==='p'?'<b>'+h(x.client)+'</b>':pg?h(S.responsable||'PDG'):'—'}</td><td>${h(wuDes(l))}</td>
-      <td class="r num">${l.dej?money(l.dej):'—'}</td><td class="r num">${v?fmt(x.qte):'—'}</td><td class="r num">${v?fmt(x.pu):'—'}</td><td class="r num">${v||l.k==='c'?money(x.montant):money(l.deb||l.cre)}</td><td class="r num">${l.deb?'<b>'+money(l.deb)+'</b>':'—'}</td><td class="r num">${l.cre?'<b>'+money(l.cre)+'</b>':'—'}</td><td class="r num"><b>${sgn(l.solde)}</b></td>
+      <td class="r num">${l.dej?money(l.dej):'—'}</td><td class="r num">${v?wuLig(x).map(wuQteTxt).join('<br>'):'—'}</td><td class="r num">${v?wuLig(x).map(l=>l.forfait?'—':fmt(l.pu)).join('<br>'):'—'}</td><td class="r num">${v||l.k==='c'?money(x.montant):money(l.deb||l.cre)}</td><td class="r num">${l.deb?'<b>'+money(l.deb)+'</b>':'—'}</td><td class="r num">${l.cre?'<b>'+money(l.cre)+'</b>':'—'}</td><td class="r num"><b>${sgn(l.solde)}</b></td>
       <td>${h(wuRecuNum(l))}</td>
       <td>${l.k==='c'?'<span class="tag">Dépense</span>':l.k==='p'||l.k==='pr'||l.k==='pa'?`<span class="tag paid">${wuStat(l)}</span>`:l.k==='pe'?tagP(x):wuReste(x)?`<span class="tag unpaid">${wuStat(l)}</span><br><small>Reste ${money(wuReste(x))}</small>`:'<span class="tag paid">Payé</span>'}</td>
       <td><div class="btns" style="flex-wrap:nowrap">${pg?`<button class="btn sm" onclick="${l.k==='pr'&&l.r.id?`voirRecuRemb('${x.id}','${l.r.id}')`:`voirRecu('${x.id}')`}">Reçu</button>${l.k==='pe'&&resteP(x)>0?`<button class="btn sm pri" onclick="rembPdg('${x.id}')">Rembourser</button>`:''}`
@@ -3705,7 +3727,7 @@ function wuCompteHTML(p){
       <div style="text-align:right"><div style="font-size:17px;font-weight:700;color:${B}">TABLEAU DE COMPTE ${WNOM} FIN DE MOIS</div><div style="font-size:12px">Édité le ${dt(new Date().toISOString())}<br>Par ${h(imprimeur()||nomAdmin()||'—')}${S.wuResp?'<br>Responsable : '+wuRespTxt():''}</div></div></div>
     <div style="font-size:20px;font-weight:700;color:${B};margin:14px 0 12px">${h(wuTitre(p))}${wuQ?' – Recherche : '+h(wuQ):''}</div>
     <table style="border-collapse:collapse;width:100%"><thead><tr>${WU_COLS.map(x=>`<th ${th}>${x}</th>`).join('')}</tr></thead><tbody>
-    ${L.map(l=>{ const x=l.x, v=l.k==='v', pg=/^p[era]$/.test(l.k); return `<tr><td ${c}>${dt(l.date)}</td><td ${c}>${h(wuNumL(l))}</td><td ${c}>${l.k==='c'?'':pg?h(S.responsable||'PDG'):h(x.client)}</td><td ${c}>${h(wuDes(l))}${v&&wuReste(x)?'<br><i>'+wuStat(l)+' – reste '+fmt(wuReste(x))+'</i>':''}</td><td ${r}>${l.dej?fmt(l.dej):''}</td><td ${r}>${v?fmt(x.qte):''}</td><td ${r}>${v?fmt(x.pu):''}</td><td ${r}>${v||l.k==='c'?fmt(x.montant):fmt(l.deb||l.cre)}</td><td ${r}>${l.deb?fmt(l.deb):''}</td><td ${r}>${l.cre?fmt(l.cre):''}</td><td ${r}><b>${fmt(l.solde)}</b></td><td ${c}>${h(wuRecuNum(l)==='—'?'':wuRecuNum(l))}</td></tr>`; }).join('')||`<tr>${WU_COLS.map(()=>`<td ${c}>&nbsp;</td>`).join('')}</tr>`}
+    ${L.map(l=>{ const x=l.x, v=l.k==='v', pg=/^p[era]$/.test(l.k); return `<tr><td ${c}>${dt(l.date)}</td><td ${c}>${h(wuNumL(l))}</td><td ${c}>${l.k==='c'?'':pg?h(S.responsable||'PDG'):h(x.client)}</td><td ${c}>${h(wuDes(l))}${v&&wuReste(x)?'<br><i>'+wuStat(l)+' – reste '+fmt(wuReste(x))+'</i>':''}</td><td ${r}>${l.dej?fmt(l.dej):''}</td><td ${r}>${v?wuLig(x).map(wuQteTxt).join('<br>'):''}</td><td ${r}>${v?wuLig(x).map(l=>l.forfait?'':fmt(l.pu)).join('<br>'):''}</td><td ${r}>${v?wuLig(x).map(l=>fmt(wuMtL(l))).join('<br>')+(wuLig(x).length>1?'<br><b>'+fmt(x.montant)+'</b>':''):l.k==='c'?fmt(x.montant):fmt(l.deb||l.cre)}</td><td ${r}>${l.deb?fmt(l.deb):''}</td><td ${r}>${l.cre?fmt(l.cre):''}</td><td ${r}><b>${fmt(l.solde)}</b></td><td ${c}>${h(wuRecuNum(l)==='—'?'':wuRecuNum(l))}</td></tr>`; }).join('')||`<tr>${WU_COLS.map(()=>`<td ${c}>&nbsp;</td>`).join('')}</tr>`}
     ${L.length?`<tr style="font-weight:700;background:#E8EEF5"><td ${c} colspan="4">Total en KMF</td><td ${r}>${fmt(T.dej)}</td><td ${c} colspan="2"></td><td ${r}>${fmt(T.ventes)}</td><td ${r}>${fmt(T.deb)}</td><td ${r}>${fmt(T.cre)}</td><td ${r}>${fmt(T.cre-T.deb)}</td><td ${c}></td></tr>`:''}</tbody></table>
     <table style="border-collapse:collapse;width:100%">${tl('Charges fixes',money(T.fx))}${tl('Charges variables',money(T.va))}${tl('Emprunts du PDG',money(T.pdg))}${tl('Remboursements du PDG',money(T.rb))}${tl('Total débit',money(T.deb))}${tl('Total crédit (encaissé)',money(T.cre))}${tl('Reste à encaisser auprès des clients',money(T.reste))}${tl('<b>Solde (crédit − débit)</b>','<b>'+money(T.cre-T.deb)+'</b>')}</table>
     <div class="lettres" style="margin-top:10px">${T.cre-T.deb>=0?'Bénéfice':'Perte'} de ${WNOM} pour ${h(moisTxt(p))} : <b>${h(enLettres(Math.abs(T.cre-T.deb)))}</b> (soit ${eur(Math.abs(T.cre-T.deb))}).</div></div>`;

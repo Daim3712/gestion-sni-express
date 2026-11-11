@@ -363,7 +363,7 @@ const IC = {
 const NAV = [['menu','Menu principal','menu'],['home','Accueil','home'],['facture','Facture','fac'],['registre','Registre','reg'],['charges','Charges','chg'],['employes','Employés','emp'],['paie','Paie','pay'],['pdg','PDG','pdg'],['compte','Compte SNI','rap'],['tracto','Tractopelle','trc'],['wusu','Wusukani Wamasiwa','wus'],['param','Paramètres','par']];
 const svg = k => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${IC[k]}</svg>`;
 let view = 'menu';
-const VERSION_APP='2.0.95';
+const VERSION_APP='2.0.96';
 /* Créateur du logiciel : coordonnées fixes, intégrées au code (identiques dans chaque installation, non modifiables) */
 const CREATEUR={nom:'ALI DAÏM',email:'daim3575@gmail.com',tels:['+269 323 05 70','+269 432 29 14']};
 const waLien=t=>'https://wa.me/'+t.replace(/\D/g,'');
@@ -3570,6 +3570,7 @@ function vWusu(m){
       <label class="f">Catégorie<input id="wc_c" list="wu_cats" placeholder="Ex. : transport, achat, déjeuner"></label><datalist id="wu_cats">${[...new Set([...cats,'Achat de marchandises','Transport','Déjeuner','Loyer','Électricité','Salaire','Autre'])].map(c=>`<option value="${h(c)}">`).join('')}</datalist>
       <label class="f">Détail<input id="wc_l" placeholder="Facultatif"></label><label class="f" style="flex:0 0 160px">Montant (KMF)<input id="wc_m" type="number" inputmode="numeric" min="0"></label><label class="f" style="flex:0 0 200px">Moyen<select id="wc_p">${MODES.map(x=>`<option>${x}</option>`).join('')}</select></label></div>
     <div class="btns" style="margin-top:.7rem"><button class="btn pri" onclick="wuAddCharge()">Ajouter la dépense</button></div></div>
+  ${wuDepCard()}
   ${wuPdgCard()}
   ${wuCompteCard()}`;
   wuCalc();
@@ -3654,6 +3655,35 @@ function wuFactureHTML(x){
 /* Facture + reçu ensemble (deux pages), ouverts automatiquement après l'enregistrement */
 function wuDocs(id){ const x=WUS.find(t=>t.id===id); if(!x) return; ouvrirRecu('Facture et reçu '+h(x.num),wuFactureHTML(x)+(wuPaye(x)?wuRecuHTML(x):''),'facture-recu-'+x.num+'.pdf'); }
 function wuFacture(id){ const x=WUS.find(t=>t.id===id); if(x) ouvrirRecu('Facture '+h(String(x.num).replace('WMV','WMF')),wuFactureHTML(x),'facture-'+String(x.num).replace('WMV','WMF')+'.pdf'); }
+/* Journal des dépenses de WUSUKANI WAMASIWA : même période que le tableau de compte (un mois, une année ou tout) */
+let wuDepT='';
+const wuDeps=p=>WUS.filter(x=>x.kind==='charge'&&wuIn(x.date,p)&&(!wuDepT||x.type===(wuDepT==='fixe'?'fixe':'variable')||(wuDepT==='variable'&&x.type!=='fixe'))).sort((a,b)=>String(b.date).localeCompare(String(a.date)));
+const wuDepTitre=p=>'Journal des dépenses '+WNOM+(!p?' – tout le compte':p.length===4?' – année '+p:' – '+moisTxt(p));
+function wuDepCard(){
+  const p=wuPer(), L=wuDeps(p), fx=L.filter(x=>x.type==='fixe').reduce((s,x)=>s+n0(x.montant),0), va=L.filter(x=>x.type!=='fixe').reduce((s,x)=>s+n0(x.montant),0);
+  const f="'depenses-wusukani-'+(wuPer()||'tout')+'.pdf'";
+  return `<div class="card"><div class="head" style="margin-bottom:.4rem"><div><h2 style="margin:0">${h(wuDepTitre(p))}</h2>
+    <p class="muted" style="margin:.2rem 0 0">Toutes les dépenses de ${WNOM} sur la période choisie dans « Afficher » du tableau de compte (un mois, une année ou tout le compte).</p></div>
+    <div class="btns"><button class="btn pri" onclick="ouvrirRecu(wuDepTitre(wuPer()),wuDepHTML(wuPer()),${f})">Aperçu</button><button class="btn" onclick="printHTML(wuDepHTML(wuPer()))">Imprimer</button><button class="btn" onclick="exportPDF(wuDepHTML(wuPer()),${f})">PDF</button></div></div>
+    <div class="row" style="margin-bottom:.8rem"><label class="f" style="flex:0 0 auto">Afficher<select style="width:auto" onchange="wuVue=this.value;render()"><option value="mois" ${wuVue==='mois'?'selected':''}>Un mois</option><option value="annee" ${wuVue==='annee'?'selected':''}>Une année entière</option><option value="tout" ${wuVue==='tout'?'selected':''}>Tout le compte</option></select></label>${wuVue==='mois'?choixMoisAn('wudm',wuP,'wuP=v||wuP;render()'):wuVue==='annee'?`<label class="f" style="flex:0 0 auto">Année<select style="width:auto" onchange="wuP=this.value+wuP.slice(4);render()">${wuAns().map(a=>`<option ${a===wuP.slice(0,4)?'selected':''}>${a}</option>`).join('')}</select></label>`:''}
+      <label class="f" style="flex:0 0 220px">Type de dépense<select onchange="wuDepT=this.value;render()"><option value="">Toutes</option><option value="fixe" ${wuDepT==='fixe'?'selected':''}>Charges fixes</option><option value="variable" ${wuDepT==='variable'?'selected':''}>Charges variables</option></select></label></div>
+    ${L.length?`<div class="scroll"><table><thead><tr><th>Date</th><th>N°</th><th>Type</th><th>Catégorie</th><th>Détail</th><th>Moyen</th><th>Par</th><th class="r">Montant</th><th></th></tr></thead><tbody>
+    ${L.map(x=>`<tr><td>${dOnly(x.date)}</td><td>${h(x.num||'—')}</td><td>${x.type==='fixe'?'Charge fixe':'Charge variable'}</td><td>${h(x.categorie||'—')}</td><td>${h(x.libelle||'—')}</td><td>${h(x.moyen||'—')}</td><td>${h(x.par||'—')}</td><td class="r num"><b>${money(x.montant)}</b></td><td><button class="btn sm danger" onclick="wuSuppr('${x.id}')">Supprimer</button></td></tr>`).join('')}
+    <tr style="font-weight:700"><td colspan="7">Total (${L.length} dépense${L.length>1?'s':''})</td><td class="r num">${money(fx+va)}</td><td></td></tr></tbody></table></div>`
+    :`<div class="empty">Aucune dépense pour ${h(wuPerTxt(p))}.</div>`}
+    <div class="kpis" style="margin-top:.8rem"><div class="kpi amber"><small>Charges fixes</small><b class="num">${money(fx)}</b></div><div class="kpi amber"><small>Charges variables</small><b class="num">${money(va)}</b></div><div class="kpi unpaid"><small>Total des dépenses</small><b class="num">${money(fx+va)}</b></div></div></div>`;
+}
+function wuDepHTML(p){
+  const L=wuDeps(p).slice().reverse(), B='#1F4E79', fx=L.filter(x=>x.type==='fixe').reduce((s,x)=>s+n0(x.montant),0), va=L.filter(x=>x.type!=='fixe').reduce((s,x)=>s+n0(x.montant),0);
+  const c='style="padding:5px 6px;border:1px solid #333;font-size:11px"', r='style="padding:5px 6px;border:1px solid #333;font-size:11px;text-align:right;white-space:nowrap"', th=`style="padding:6px;border:1px solid #333;font-size:11px;background:${B};color:#fff;text-align:left"`;
+  return `<div class="sheet">${entete('JOURNAL DES DÉPENSES – '+WNOM,!p?'Tout le compte':p.length===4?'Année '+p:moisTxt(p),new Date().toISOString())}
+    ${S.wuResp?`<p style="font-size:12px;margin:8px 0">Responsable : <b>${wuRespTxt()}</b>${wuDepT?' – '+(wuDepT==='fixe'?'Charges fixes':'Charges variables')+' seulement':''}</p>`:''}
+    <table style="border-collapse:collapse;width:100%;margin-top:10px"><thead><tr><th ${th}>Date</th><th ${th}>N°</th><th ${th}>Type</th><th ${th}>Catégorie</th><th ${th}>Détail</th><th ${th}>Moyen</th><th ${th}>Montant</th></tr></thead><tbody>
+    ${L.map(x=>`<tr><td ${c}>${dOnly(x.date)}</td><td ${c}>${h(x.num||'')}</td><td ${c}>${x.type==='fixe'?'Charge fixe':'Charge variable'}</td><td ${c}>${h(x.categorie||'')}</td><td ${c}>${h(x.libelle||'')}</td><td ${c}>${h(x.moyen||'')}</td><td ${r}>${money(x.montant)}</td></tr>`).join('')||`<tr><td ${c} colspan="7">Aucune dépense.</td></tr>`}
+    <tr style="font-weight:700;background:#E8EEF5"><td ${c} colspan="6">Charges fixes</td><td ${r}>${money(fx)}</td></tr><tr style="font-weight:700;background:#E8EEF5"><td ${c} colspan="6">Charges variables</td><td ${r}>${money(va)}</td></tr><tr style="font-weight:700;background:#E8EEF5"><td ${c} colspan="6">TOTAL DES DÉPENSES</td><td ${r}>${money(fx+va)}</td></tr></tbody></table>
+    <div class="lettres" style="margin-top:10px">Total des dépenses de ${WNOM} pour ${h(wuPerTxt(p))} : <b>${h(enLettres(fx+va))}</b>.</div>
+    <div class="foot">${signes()}</div></div>`;
+}
 async function wuAddCharge(){
   const d=val('wc_d')||auj(), m=n0(val('wc_m')), cat=String(val('wc_c')||'').trim();
   if(!cat){ toast('Indiquez la catégorie'); document.getElementById('wc_c').focus(); return; }

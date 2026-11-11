@@ -367,7 +367,7 @@ const IC = {
 const NAV = [['menu','Menu principal','menu'],['home','Accueil','home'],['facture','Facture','fac'],['registre','Registre','reg'],['journal','Journal des saisies','reg'],['charges','Charges','chg'],['employes','Employés','emp'],['paie','Paie','pay'],['pdg','PDG','pdg'],['compte','Compte SNI','rap'],['tracto','Tractopelle','trc'],['wusu','Wusukani Wamasiwa','wus'],['param','Paramètres','par']];
 const svg = k => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${IC[k]}</svg>`;
 let view = 'menu';
-const VERSION_APP='2.0.100';
+const VERSION_APP='2.0.101';
 /* Créateur du logiciel : coordonnées fixes, intégrées au code (identiques dans chaque installation, non modifiables) */
 const CREATEUR={nom:'ALI DAÏM',email:'daim3575@gmail.com',tels:['+269 323 05 70','+269 432 29 14']};
 const waLien=t=>'https://wa.me/'+t.replace(/\D/g,'');
@@ -4763,9 +4763,11 @@ async function supprCompte(id){
   const L=COMPTES(), c=L.find(x=>x.id===id); if(!c) return;
   if(superProtege(c)){ toast('Le super administrateur ne peut être supprimé que par lui-même'); return; }
   if(estAdmin(c)&&L.filter(estAdmin).length===1){ toast('Gardez au moins un administrateur'); return; }
-  if(!confirm('Supprimer le compte de '+c.nom+' ?')) return;
-  if(!await confirmerAdmin('supprimer le compte de '+c.nom)) return;
-  S.comptes=L.filter(x=>x.id!==id); try{ await saveSettings(); journal('Compte supprimé : '+c.nom); }catch(e){} render();
+  if(c.id===CREATEUR_ID){ toast('Le compte de l’administrateur ne peut pas être supprimé'); return; }
+  if(!isAdmin()){ toast('Seul l’administrateur peut supprimer un compte'); return; }
+  if(!confirm('Supprimer le compte de '+c.nom+' ('+roleCourt(c.role)+') ?\nIl ne pourra plus ouvrir le logiciel.')) return;
+  if(!await codeSuppr('supprimer le compte de '+c.nom+' ('+roleCourt(c.role)+')')) return;
+  S.comptes=COMPTES().filter(x=>x.id!==id); try{ await saveSettings(); journal('Compte supprimé : '+c.nom+' ('+roleCourt(c.role)+')'); toast('Compte de '+c.nom+' supprimé'); }catch(e){ toast('Échec de l’enregistrement'); } render();
 }
 /* Administrateur spécial : le créateur du logiciel, qui intervient en cas d'urgence (code oublié, accès bloqué…) */
 function superCard(){

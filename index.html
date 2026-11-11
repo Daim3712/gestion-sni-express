@@ -367,7 +367,7 @@ const IC = {
 const NAV = [['menu','Menu principal','menu'],['home','Accueil','home'],['facture','Facture','fac'],['registre','Registre','reg'],['journal','Journal des saisies','reg'],['charges','Charges','chg'],['employes','Employés','emp'],['paie','Paie','pay'],['pdg','PDG','pdg'],['compte','Compte SNI','rap'],['tracto','Tractopelle','trc'],['wusu','Wusukani Wamasiwa','wus'],['param','Paramètres','par']];
 const svg = k => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${IC[k]}</svg>`;
 let view = 'menu';
-const VERSION_APP='2.0.101';
+const VERSION_APP='2.0.102';
 /* Créateur du logiciel : coordonnées fixes, intégrées au code (identiques dans chaque installation, non modifiables) */
 const CREATEUR={nom:'ALI DAÏM',email:'daim3575@gmail.com',tels:['+269 323 05 70','+269 432 29 14']};
 const waLien=t=>'https://wa.me/'+t.replace(/\D/g,'');
@@ -4708,7 +4708,7 @@ function comptesCard(){
   const L=COMPTES().filter(c=>!c.attente), moi=c=>USER&&USER.id===c.id;
   return `${demandesCard()}<div class="card"><h2>Comptes et sécurité</h2>
   <p class="muted" style="margin-top:0">${L.length?'L’application demande l’identifiant et le mot de passe à chaque ouverture. <b>Seul l’administrateur voit tout et crée les comptes.</b> Le PDG voit seulement ses propres transactions ; le chef de service fait les factures et voit le journal des saisies et le registre ; l’agent fait seulement les factures.':'Aucun compte pour le moment : l’application s’ouvre sans code. Créez d’abord le compte administrateur (le vôtre).'}</p>
-  ${L.length?`<div class="scroll"><table><thead><tr><th>Nom complet</th><th>Identifiant</th><th>Adresse e-mail</th><th>Rôle</th><th></th></tr></thead><tbody>${L.map(c=>`<tr><td><b>${h(c.nom)}</b>${moi(c)?' <span class="muted">(vous)</span>':''}</td><td>${h(idCompte(c))}</td><td>${h(c.email||'—')}</td><td>${ROLES[c.role]||ROLES.employe}</td><td>${superProtege(c)?'<span class="tag conv">Protégé</span>':`<div class="btns"><button class="btn sm" onclick="changerPin('${c.id}')">Changer le mot de passe</button><button class="btn sm" onclick="changerEmail('${c.id}')">E-mail</button>${moi(c)?'':`<button class="btn sm danger" onclick="supprCompte('${c.id}')">Supprimer</button>`}</div>`}</td></tr>`).join('')}</tbody></table></div>`:''}
+  ${L.length?`<div class="scroll"><table><thead><tr><th>Nom complet</th><th>Identifiant</th><th>Adresse e-mail</th><th>Rôle</th><th></th></tr></thead><tbody>${L.map(c=>`<tr><td><b>${h(c.nom)}</b>${moi(c)?' <span class="muted">(vous)</span>':''}</td><td>${h(idCompte(c))}</td><td>${h(c.email||'—')}</td><td>${ROLES[c.role]||ROLES.employe}</td><td>${superProtege(c)?'<span class="tag conv">Protégé</span>':`<div class="btns">${isAdmin()?`<button class="btn sm pri" onclick="modifCompte('${c.id}')">Modifier</button>`:''}<button class="btn sm" onclick="changerPin('${c.id}')">Changer le mot de passe</button><button class="btn sm" onclick="changerEmail('${c.id}')">E-mail</button>${moi(c)?'':`<button class="btn sm danger" onclick="supprCompte('${c.id}')">Supprimer</button>`}</div>`}</td></tr>`).join('')}</tbody></table></div>`:''}
   ${L.length&&!estCreateur()?`<p class="errs" style="margin:1rem 0 0"><b>Création de comptes réservée au créateur du logiciel</b>Seul ${CREATEUR.nom} (compte « Administrateur spécial ») peut créer un compte ou valider une inscription. Contact : ${createurLiens()}</p>
   <div class="btns" style="margin-top:.8rem">${USER?'<button class="btn" onclick="deconnexion()">Se déconnecter</button>':''}</div></div>`:`
   <h3 style="margin:1rem 0 .4rem">${L.length?'Créer un nouveau compte (administrateur, agent ou employé)':'Créer le compte administrateur'}</h3>
@@ -4758,6 +4758,41 @@ async function changerPin(id){
   if(!pinOk(p)){ toast('Le code doit avoir de 4 à 20 caractères, sans espace'); return; }
   if(await demander('Retapez le nouveau code','','password')!==p){ toast('Les deux codes ne sont pas identiques'); return; }
   c.pin=await hashPin(id,p); try{ await saveSettings(); journal('Code changé : '+c.nom); toast('Code changé'); }catch(e){ toast('Échec de l’enregistrement'); }
+}
+/* Modifier un compte déjà créé (administrateur seulement, avec son code) : nom, identifiant, rôle, e-mail, mot de passe */
+function modifCompte(id){
+  const c=COMPTES().find(x=>x.id===id); if(!c) return;
+  if(!isAdmin()){ toast('Seul l’administrateur peut modifier un compte'); return; }
+  if(superProtege(c)){ toast('Ce compte est protégé'); return; }
+  const fixe=c.role==='super'||c.role==='admin';
+  const R=[['agent','Agent (factures seulement)'],['chef','Chef de service (factures, journal des saisies, registre)'],['pdg','PDG (ses propres transactions seulement)']];
+  document.querySelectorAll('.modal').forEach(m=>m.remove());
+  modalPdg(`<div class="head" style="margin-bottom:.6rem"><h2 style="margin:0">Modifier le compte de ${h(c.nom)}</h2><button class="btn" onclick="this.closest('.modal').remove()">Fermer</button></div>
+    <div class="row"><label class="f">Nom complet<input id="mc_n" value="${h(c.nom)}"></label><label class="f">Identifiant (pour se connecter)<input id="mc_l" value="${h(idCompte(c))}" autocapitalize="none" spellcheck="false"></label></div>
+    <div class="row" style="margin-top:.6rem"><label class="f">Rôle${fixe?`<input value="${h(roleCourt(c.role))}" disabled>`:`<select id="mc_r">${R.map(([v,t])=>`<option value="${v}" ${(c.role==='employe'?'agent':c.role)===v?'selected':''}>${t}</option>`).join('')}</select>`}</label>
+      <label class="f">Adresse e-mail${fixe?'':' (facultatif)'}<input id="mc_e" type="email" value="${h(c.email||'')}"></label></div>
+    <div class="row" style="margin-top:.6rem"><label class="f">Nouveau mot de passe (laisser vide pour le garder)<input id="mc_p" type="password" autocomplete="new-password"></label><label class="f">Confirmer le nouveau mot de passe<input id="mc_p2" type="password" autocomplete="new-password"></label></div>
+    <div class="btns" style="margin-top:.9rem"><button class="btn pri" onclick="enregModifCompte('${c.id}')">Enregistrer les modifications</button></div>
+    <p class="muted" style="margin-bottom:0">Le code de l’administrateur sera demandé pour enregistrer.</p>`);
+}
+async function enregModifCompte(id){
+  const c=COMPTES().find(x=>x.id===id); if(!c||!isAdmin()) return;
+  const nom=val('mc_n').trim(), login=val('mc_l').trim().replace(/\s+/g,'').toLowerCase(), email=val('mc_e').trim(), p=val('mc_p'), p2=val('mc_p2');
+  const fixe=c.role==='super'||c.role==='admin', role=fixe?c.role:(val('mc_r')||'agent');
+  if(!nom){ toast('Indiquez le nom complet'); return; }
+  if(!login){ toast('Indiquez l’identifiant'); return; }
+  if(COMPTES().some(x=>x.id!==id&&idCompte(x).toLowerCase()===login)){ toast('Cet identifiant est déjà utilisé'); return; }
+  if(COMPTES().some(x=>x.id!==id&&String(x.nom||'').trim().toLowerCase()===nom.toLowerCase())){ toast('Ce nom a déjà un compte'); return; }
+  if(email&&!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)){ toast('Adresse e-mail invalide'); return; }
+  if(fixe&&!email){ toast('L’adresse e-mail est obligatoire pour un administrateur'); return; }
+  if(p||p2){ if(!pinOk(p)){ toast('Le mot de passe doit avoir de 4 à 20 caractères, sans espace'); return; } if(p!==p2){ toast('Les deux mots de passe ne sont pas identiques'); return; } }
+  if(!await codeSuppr('modifier le compte de '+c.nom)) return;
+  const avant=c.nom+' ('+roleCourt(c.role)+')';
+  const nc={...c,nom,login,email,role}; if(p) nc.pin=await hashPin(c.id,p);
+  S.comptes=COMPTES().map(x=>x.id===id?nc:x); if(USER&&USER.id===id){ USER=nc; impPar=nc.nom; }
+  try{ await saveSettings(); }catch(e){ toast('Échec de l’enregistrement'); return; }
+  journal('Compte modifié : '+avant+' → '+nom+' ('+roleCourt(role)+'), identifiant '+login+(p?', nouveau mot de passe':''));
+  document.querySelectorAll('.modal').forEach(m=>m.remove()); toast('Compte de '+nom+' modifié'); drawNav(); render();
 }
 async function supprCompte(id){
   const L=COMPTES(), c=L.find(x=>x.id===id); if(!c) return;

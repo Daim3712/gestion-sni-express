@@ -367,7 +367,7 @@ const IC = {
 const NAV = [['menu','Menu principal','menu'],['home','Accueil','home'],['facture','Facture','fac'],['registre','Registre','reg'],['journal','Journal des saisies','reg'],['charges','Charges','chg'],['employes','Employés','emp'],['paie','Paie','pay'],['pdg','PDG','pdg'],['compte','Compte SNI','rap'],['tracto','Tractopelle','trc'],['wusu','Wusukani Wamasiwa','wus'],['param','Paramètres','par']];
 const svg = k => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${IC[k]}</svg>`;
 let view = 'menu';
-const VERSION_APP='2.0.105';
+const VERSION_APP='2.0.106';
 /* Créateur du logiciel : coordonnées fixes, intégrées au code (identiques dans chaque installation, non modifiables) */
 const CREATEUR={nom:'ALI DAÏM',email:'daim3575@gmail.com',tels:['+269 323 05 70','+269 432 29 14']};
 const waLien=t=>'https://wa.me/'+t.replace(/\D/g,'');
@@ -2159,7 +2159,7 @@ const hms=t=>{ const s=secondesDe(t); return s==null?(t||''):fmtHMS(s/3600); };
 const trCredit=x=>(x.paiements||[]).reduce((s,p)=>s+n0(p.montant),0);
 const trAvance=x=>(x.paiements||[]).filter(p=>p.avance).reduce((s,p)=>s+n0(p.montant),0);
 const trSolde=x=>Math.max(0,n0(x.montant)-trCredit(x));
-const trPaye=x=>trSolde(x)<=0;
+const trPaye=x=>n0(x.montant)>0&&trSolde(x)<=0; /* un travail sans prix (à compléter) n'est jamais « Payé » */
 const trTag=x=>trPaye(x)?'<span class="tag paid">Payé</span>':'<span class="tag unpaid">Impayé</span>';
 function nextTr(prefix,date){ const pre=prefix+'-'+String(date||auj()).slice(0,4)+'-'; let mx=0; TRC.forEach(x=>{ [x.num,...(x.paiements||[]).map(p=>p.num)].forEach(n=>{ if(n&&n.startsWith(pre)) mx=Math.max(mx,parseInt(n.slice(pre.length),10)||0); }); }); return pre+pad(mx+1,4); }
 let trP={an:'',mois:''}, trCh='', trBul={ch:'',mois:''}, trQ='';
@@ -2239,14 +2239,15 @@ async function addTracto(){
   /* avances déjà données par ce client avant le travail : déduites automatiquement */
   const AV=[]; let dispo=mt; trAvDispo(client).forEach(a=>{ const k=Math.min(trAvReste(a),dispo); if(k>0){ AV.push({id:uid(),num:a.num,date:a.date,montant:k,moyen:a.moyen||'Espèces',avance:true,avId:a.id}); dispo-=k; } });
   const dejaAv=mt-dispo;
-  if(av+dejaAv>mt){ toast('L’avance dépasse le prix du client ('+money(mt)+(dejaAv?', dont '+money(dejaAv)+' d’avance déjà reçue':'')+')'); return; }
+  /* prix pas encore connu (0) : l'avance est acceptée telle quelle ; le prix se complète ensuite avec « Modifier » */
+  if(mt>0&&av+dejaAv>mt){ toast('L’avance dépasse le prix du client ('+money(mt)+(dejaAv?', dont '+money(dejaAv)+' d’avance déjà reçue':'')+')'); return; }
   const id=uid(), num=nextTr('TP',d), x={id,kind:'travail',num,date:new Date(d+'T'+hT).toISOString(),client,tel:String(val('tr_tel')||'').trim(),lieu:String(val('tr_lieu')||'').trim(),nature:String(val('tr_nat')||'').trim(),chauffeur:val('tr_ch')||'',taux:tauxDe(val('tr_ch')||''),entree:e,sortie:s,dej:secondesDe(dj)?hms(dj):'',heures:hh,prix:pu,montant:mt,paiements:[]};
   /* Par défaut le client paie tout à l'enregistrement : le travail est « Payé » ; sinon on note l'avance */
   x.paiements.push(...AV);
   if(paye){ if(mt-dejaAv>0) x.paiements.push({id:uid(),num:nextTr('TPP',d),date:new Date(d+'T'+hT).toISOString(),montant:mt-dejaAv,moyen:val('tr_avm')||'Espèces',comptant:true}); }
   else if(av>0) x.paiements.push({id:uid(),num:nextTr('TPA',d),date:new Date(d+'T'+hT).toISOString(),montant:av,moyen:val('tr_avm')||'Espèces',avance:true});
   await put('tracto',x); journal('Tractopelle : '+num+' – '+client+' – '+fmtH(hh)+' – '+money(mt));
-  toast((dejaAv?'Avance de '+money(dejaAv)+' déduite – ':'')+(trPaye(x)?'Travail enregistré : payé':'Travail enregistré : reste '+money(trSolde(x)))); render(); trRecu(id);
+  toast(mt<=0?'Travail enregistré'+(trCredit(x)?' – avance de '+money(trCredit(x))+' reçue':'')+' : complétez le prix avec « Modifier »':(dejaAv?'Avance de '+money(dejaAv)+' déduite – ':'')+(trPaye(x)?'Travail enregistré : payé':'Travail enregistré : reste '+money(trSolde(x)))); render(); trRecu(id);
 }
 /* Modifier un travail enregistré : les heures et le prix se recalculent ; « Payé » met les paiements au niveau du nouveau prix */
 function trModifier(id){
@@ -2267,7 +2268,7 @@ async function trEnregModif(id){
   const dj=val('tm_dj'), hh=e&&s?Math.max(0,heuresEntre(e,s,dj)):0; /* cases facultatives, comme à l'ajout */
   const mt=Math.round(hh*pu); let P=[...(x.paiements||[])];
   /* jamais plus payé que le nouveau prix : on réduit d'abord les derniers paiements */
-  let trop=P.reduce((a,p)=>a+n0(p.montant),0)-mt; for(let i=P.length-1;i>=0&&trop>0;i--){ const k=Math.min(n0(P[i].montant),trop); P[i]={...P[i],montant:n0(P[i].montant)-k}; trop-=k; } P=P.filter(p=>n0(p.montant)>0);
+  let trop=mt>0?P.reduce((a,p)=>a+n0(p.montant),0)-mt:0; /* prix encore à 0 : on garde l'avance */ for(let i=P.length-1;i>=0&&trop>0;i--){ const k=Math.min(n0(P[i].montant),trop); P[i]={...P[i],montant:n0(P[i].montant)-k}; trop-=k; } P=P.filter(p=>n0(p.montant)>0);
   if(val('tm_pay')==='paye'){ const reste=mt-P.reduce((a,p)=>a+n0(p.montant),0); if(reste>0) P.push({id:uid(),num:nextTr('TPP',d),date:new Date().toISOString(),montant:reste,moyen:val('tm_m')||'Espèces',comptant:true}); }
   const nx={...x,date:new Date(d+'T'+(e?hms(e):(new Date(x.date).toTimeString().slice(0,8)||'12:00:00'))).toISOString(),client:client||'Client non indiqué',tel:String(val('tm_tel')||'').trim(),lieu:String(val('tm_lieu')||'').trim(),nature:String(val('tm_nat')||'').trim(),chauffeur:val('tm_ch')||x.chauffeur,taux:(val('tm_ch')||x.chauffeur)===x.chauffeur&&x.taux!=null?x.taux:tauxDe(val('tm_ch')||x.chauffeur),entree:e,sortie:s,dej:secondesDe(dj)?hms(dj):'',heures:hh,prix:pu,montant:mt,paiements:P};
   await put('tracto',nx); journal('Tractopelle : travail modifié '+x.num+' – '+client+' – '+money(mt));

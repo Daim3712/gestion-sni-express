@@ -367,7 +367,7 @@ const IC = {
 const NAV = [['menu','Menu principal','menu'],['home','Accueil','home'],['facture','Facture','fac'],['registre','Registre','reg'],['journal','Journal des saisies','reg'],['charges','Charges','chg'],['employes','Employés','emp'],['paie','Paie','pay'],['pdg','PDG','pdg'],['compte','Compte SNI','rap'],['tracto','Tractopelle','trc'],['wusu','Wusukani Wamasiwa','wus'],['param','Paramètres','par']];
 const svg = k => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${IC[k]}</svg>`;
 let view = 'menu';
-const VERSION_APP='2.0.103';
+const VERSION_APP='2.0.104';
 /* Créateur du logiciel : coordonnées fixes, intégrées au code (identiques dans chaque installation, non modifiables) */
 const CREATEUR={nom:'ALI DAÏM',email:'daim3575@gmail.com',tels:['+269 323 05 70','+269 432 29 14']};
 const waLien=t=>'https://wa.me/'+t.replace(/\D/g,'');
@@ -3031,7 +3031,8 @@ function editMois(id){
     <div class="row" style="margin-top:.6rem"><label class="f">Date de paye<span style="display:flex;gap:.4rem"><input id="mm_datePaye" type="date" value="${h(v.datePaye)}" style="flex:1"><button type="button" class="btn sm" onclick="payeAujMois()">Payé aujourd’hui</button></span></label>
       <label class="f">Statut<select id="mm_statut" onchange="if(this.value==='paye'&&!document.getElementById('mm_datePaye').value)document.getElementById('mm_datePaye').value=auj()"><option value="paye" ${v.statut==='paye'?'selected':''}>Payé (tout)</option><option value="partiel" ${v.statut==='partiel'?'selected':''}>Payé en partie</option><option value="attente" ${v.statut!=='paye'&&v.statut!=='partiel'?'selected':''}>Impayé</option></select></label>
       <label class="f">Montant déjà versé (si payé en partie)<input id="mm_verse" type="number" inputmode="numeric" min="0" value="${v.statut==='partiel'?n0(v.verse):''}" placeholder="Ex. : 20000"></label>
-      <label class="f">Mode de paiement<select id="mm_modePaie">${MODES.map(x=>`<option ${x===v.modePaie?'selected':''}>${x}</option>`).join('')}</select></label></div>
+      <label class="f">Mode de paiement<select id="mm_modePaie">${MODES.map(x=>`<option ${x===v.modePaie?'selected':''}>${x}</option>`).join('')}</select></label>
+      <label class="f">Caisse d’où sort l’argent<select id="mm_caisse">${CAISSES_PAIE.map(x=>`<option ${x===caisseV(v)?'selected':''}>${x}</option>`).join('')}</select></label></div>
     <h3 style="margin:1rem 0 .4rem">Gains (KMF)</h3><div class="row">${GAINS.map(([k,l])=>n(k,l)).join('')}</div>
     <h3 style="margin:1rem 0 .4rem">Retenues (KMF)</h3><div class="row">${RETS.map(([k,l])=>n(k,l)).join('')}</div>
     <label class="f" style="margin-top:.8rem">Justification en cas d’urgence<input id="mm_urgence" value="${h(v.urgence)}" placeholder="Ex. : avance accordée pour raison de santé"></label>
@@ -3041,7 +3042,7 @@ function editMois(id){
 async function saveMois(id){
   const e={...EMP.find(x=>x.id===id)}, o={};
   [...MONTANTS,'present','absent','retards'].forEach(k=>o[k]=n0(val('mm_'+k)));
-  ['datePaye','statut','modePaie','urgence'].forEach(k=>o[k]=val('mm_'+k));
+  ['datePaye','statut','modePaie','urgence','caisse'].forEach(k=>o[k]=val('mm_'+k));
   if(o.statut==='paye'&&!o.datePaye) o.datePaye=auj();
   if(retV(o)>brutV(o)){ toast('Les retenues dépassent le salaire brut'); return; }
   o.verse=n0(val('mm_verse'));
@@ -3154,8 +3155,8 @@ function bulletinHTML(e,p){
     <table class="bp-par"><tr><th>Employeur</th><th>Salarié</th></tr><tr>
       <td><b>${h(S.nom)}</b><br>${h(S.adresse)}${S.tel?'<br>Tél. : '+h(S.tel):''}${S.nif?'<br>R.C.S : '+h(S.nif):''}</td>
       <td><b>${h(String(e.nom||'').toUpperCase())}</b><br>N° employé : <b>${h(numE(e))}</b><br>Fonction : <b>${h(e.poste||'—')}</b><br>Embauché le ${e.embauche?e.embauche.split('-').reverse().join('-'):'—'}</td></tr></table>
-    <table class="bp-inf"><tr><th>Période de paie</th><th>Date de paye</th><th>Mode de paiement</th><th>Jours présent</th><th>Jours absent</th><th>Retards</th></tr>
-      <tr><td>${moisTxt(p)}</td><td>${v.statut!=='attente'&&v.datePaye?dp:'—'}</td><td>${h(v.modePaie)}</td><td>${n0(v.present)}</td><td>${n0(v.absent)}</td><td>${n0(v.retards)}</td></tr></table>
+    <table class="bp-inf"><tr><th>Période de paie</th><th>Date de paye</th><th>Mode de paiement</th><th>Caisse</th><th>Jours présent</th><th>Jours absent</th><th>Retards</th></tr>
+      <tr><td>${moisTxt(p)}</td><td>${v.statut!=='attente'&&v.datePaye?dp:'—'}</td><td>${h(v.modePaie)}</td><td>${v.statut!=='attente'?h(caisseV(v)):'—'}</td><td>${n0(v.present)}</td><td>${n0(v.absent)}</td><td>${n0(v.retards)}</td></tr></table>
     <div class="bp-cols"><table class="bp-t"><tr><th>Gains</th><th class="c">Base</th><th class="m">Montant</th></tr>
       ${GAINS.map(([k,l])=>ligne(l,k==='salaire'?n0(v.present)+' j':'',v[k])).join('')}
       <tr class="tot"><td>Salaire brut</td><td></td><td class="m">${fmt(brut)}</td></tr></table>
@@ -3243,11 +3244,12 @@ function tousCard(){
   const L=listePaie(); if(!L.length) return '';
   return `<h3 style="margin:1.2rem 0 .4rem">Tous les employés – ${moisTxt(pp)}</h3>
     <p class="muted" style="margin-top:0">Les salaires et toutes les valeurs de chaque employé se remplissent automatiquement à partir du dernier mois enregistré. Corrigez si besoin, puis enregistrez tout d’un coup. Pour enlever le salaire d’un employé ce mois-ci, videz sa case « Salaire » : il ne sera pas compté et vous pourrez l’enregistrer normalement plus tard.</p>
-    <div class="scroll"><table><thead><tr><th>Employé</th><th class="r">Salaire (KMF)</th><th>Paiement</th><th class="r">Montant versé</th><th class="r">Net à payer</th></tr></thead><tbody>
+    <div class="scroll"><table><thead><tr><th>Employé</th><th class="r">Salaire (KMF)</th><th>Paiement</th><th class="r">Montant versé</th><th>Caisse d’où sort l’argent</th><th class="r">Net à payer</th></tr></thead><tbody>
     ${L.map(e=>{ const v=bv(e,pp); return `<tr><td><b>${h(e.nom)}</b><br><small class="muted">${h(e.poste||'')}</small></td>
       <td class="r"><input id="qa_s_${e.id}" type="number" inputmode="numeric" min="0" value="${v.retire?'':n0(v.salaire)}" placeholder="${v.retire?'salaire enlevé':''}" style="max-width:130px;text-align:right"></td>
       <td><select id="qa_st_${e.id}"><option value="paye" ${v.statut==='paye'?'selected':''}>Payé (tout)</option><option value="partiel" ${v.statut==='partiel'?'selected':''}>Payé en partie</option><option value="attente" ${v.statut!=='paye'&&v.statut!=='partiel'?'selected':''}>Impayé</option></select></td>
       <td class="r"><input id="qa_v_${e.id}" type="number" inputmode="numeric" min="0" value="${v.statut==='partiel'?n0(v.verse):''}" placeholder="si en partie" style="max-width:120px;text-align:right"></td>
+      <td><select id="qa_c_${e.id}">${CAISSES_PAIE.map(x=>`<option ${x===caisseV(v)?'selected':''}>${x}</option>`).join('')}</select></td>
       <td class="r num">${money(netV(v))}</td></tr>`; }).join('')}
     </tbody></table></div>
     <div class="btns" style="margin-top:.8rem"><button class="btn pri" onclick="saveTous()">Enregistrer tous les bulletins de ${moisTxt(pp)}</button></div>`;
@@ -3259,7 +3261,7 @@ async function saveTous(){
     const v=bvR(e0,pp), sal=n0(val('qa_s_'+e0.id));
     /* case Salaire vidée : le salaire de ce mois est enlevé (aucune charge), les autres valeurs restent gardées */
     if(sal<=0){ if(!bv(e0,pp).retire){ out.push({...e0,mois:{...(e0.mois||{}),[pp]:{...v,retire:true,statut:'attente',verse:0,datePaye:''}}}); nRet++; } continue; }
-    v.salaire=sal; v.statut=val('qa_st_'+e0.id)||'attente'; v.verse=n0(val('qa_v_'+e0.id));
+    v.salaire=sal; v.statut=val('qa_st_'+e0.id)||'attente'; v.verse=n0(val('qa_v_'+e0.id)); v.caisse=val('qa_c_'+e0.id)||caisseV(v);
     v.datePaye=v.statut==='attente'?'':(v.datePaye||auj());
     if(retV(v)>brutV(v)){ toast('Retenues trop élevées pour '+e0.nom); return; }
     if(v.statut==='partiel'&&v.verse<=0){ toast('Indiquez le montant versé pour '+e0.nom); return; }
@@ -3314,9 +3316,27 @@ async function remettreSalaire(id){
   try{ await put('employes',{...e0,mois:{...(e0.mois||{}),[pp]:m}}); await autoSalaires(); }catch(err){ return; }
   toast('Salaire de '+e0.nom+' remis pour '+moisTxt(pp)); render();
 }
-async function marquerPaye(id){
-  const e={...EMP.find(x=>x.id===id)}; e.mois={...(e.mois||{}),[pp]:{...bv(e,pp),statut:'paye',datePaye:auj()}};
-  try{ await put('employes',e); }catch(err){ return; } toast('Salaire de '+moisTxt(pp)+' marqué payé'); render();
+/* Caisse d'où sort l'argent du salaire (choisie au moment de valider le paiement) */
+const CAISSES_PAIE=['Caisse SNI','Caisse Tractopelle','Caisse Wusukani Wamasiwa','Caisse du PDG','Banque','Mobile money'];
+const caisseV=v=>(v&&v.caisse)||'Caisse SNI';
+async function marquerPaye(id,caisse){
+  const e0=EMP.find(x=>x.id===id); if(!e0) return;
+  if(!caisse){ caisse=await choisirCaisse(e0.nom,caisseV(bv(e0,pp))); if(!caisse) return; }
+  const e={...e0}; e.mois={...(e.mois||{}),[pp]:{...bv(e,pp),statut:'paye',datePaye:auj(),caisse}};
+  try{ await put('employes',e); }catch(err){ return; } journal('Paie : salaire de '+e0.nom+' ('+moisTxt(pp)+') payé – '+caisse); toast('Salaire de '+moisTxt(pp)+' payé – sorti de : '+caisse); render();
+}
+/* Petite fenêtre : choisir la caisse au moment de valider le paiement */
+function choisirCaisse(nom,def){
+  return new Promise(res=>{
+    document.querySelectorAll('.modal').forEach(m=>m.remove());
+    const md=modalPdg(`<div class="head" style="margin-bottom:.6rem"><h2 style="margin:0">Valider le paiement – ${h(nom)}</h2></div>
+      <label class="f">Caisse d’où sort l’argent<select id="cz_c">${CAISSES_PAIE.map(x=>`<option ${x===def?'selected':''}>${x}</option>`).join('')}</select></label>
+      <div class="btns" style="margin-top:.9rem"><button class="btn pri" id="cz_ok">Valider le paiement</button><button class="btn" id="cz_no">Annuler</button></div>`);
+    md.querySelector('.in').style.maxWidth='460px';
+    const fin=v=>{ md.remove(); res(v); };
+    md.querySelector('#cz_ok').onclick=()=>fin(md.querySelector('#cz_c').value);
+    md.querySelector('#cz_no').onclick=()=>fin(null);
+  });
 }
 function tousBulletins(){
   const R=[], now=ymNow();
@@ -3365,7 +3385,7 @@ function recuSalHTML(e,p){
     <div class="rs-n">N° <b>${numRS(e,p)}</b> – ${moisTxt(p)}</div>
     <table class="rs-tb"><tr><td>Employé</td><td><b>${h(e.nom)}</b></td></tr><tr><td>N° employé</td><td>${h(numE(e))}</td></tr><tr><td>Fonction</td><td>${h(e.poste||'—')}</td></tr>
       <tr><td>Période</td><td>${moisTxt(p)}</td></tr><tr><td>Net à payer</td><td><b>${money(net)}</b></td></tr><tr><td>Montant reçu</td><td><b>${money(vs)}</b></td></tr>
-      <tr><td>Reste à recevoir</td><td><b style="color:${r?'#B3264F':'#1E7A4C'}">${money(r)}</b></td></tr><tr><td>Mode de paiement</td><td>${h(v.modePaie||'—')}</td></tr><tr><td>Date du paiement</td><td>${vs?dp:'—'}</td></tr></table>
+      <tr><td>Reste à recevoir</td><td><b style="color:${r?'#B3264F':'#1E7A4C'}">${money(r)}</b></td></tr><tr><td>Mode de paiement</td><td>${h(v.modePaie||'—')}</td></tr><tr><td>Caisse</td><td>${vs?h(caisseV(v)):'—'}</td></tr><tr><td>Date du paiement</td><td>${vs?dp:'—'}</td></tr></table>
     <p class="rs-p">${vs?`Je soussigné(e) <b>${h(e.nom)}</b> reconnais avoir reçu la somme de <b>${h(enLettres(vs))}</b> (${money(vs)}, soit ${eur(vs)}) au titre de mon salaire de ${moisTxt(p).toLowerCase()}${r?`. Il reste à recevoir ${money(r)}.`:'.'}`:`Le salaire de ${moisTxt(p).toLowerCase()} de <b>${h(e.nom)}</b> (${money(net)}) n’a pas encore été reçu.`}</p>
     <div class="rs-stamp ${cl}">${st}</div>
     <div class="rs-sig">${box('Signature de l’employé','',e.nom)}${box('Cachet de l’administrateur',imgSig('cachetAdmin'),nomAdmin())}</div>
@@ -3376,7 +3396,7 @@ function recuSalWord(e,p){
   const c='style="border:1px solid #999;padding:2pt 4pt;font-size:8pt"', s='style="border:1px solid #999;padding:3pt;width:33%;height:48pt;font-size:7pt;text-align:center" valign="top"', img=(k)=>IMG[k]?`<br><img src="${IMG[k]}" width="45">`:'';
   return `<div class="RS"><p align="center" style="font-size:8pt;margin:0">${IMG.logo?`<img src="${IMG.logo}" width="80"><br>`:''}<b>${h(S.nom)}</b><br>${h(S.adresse)}</p>
   <p align="center" style="font-size:12pt;margin:4pt 0"><b>REÇU DE SALAIRE</b><br><span style="font-size:8pt">N° ${numRS(e,p)} – ${moisTxt(p)}</span></p>
-  <table style="width:100%;border-collapse:collapse">${[['Employé',`<b>${h(e.nom)}</b>`],['N° employé',h(numE(e))],['Fonction',h(e.poste||'—')],['Net à payer',`<b>${money(net)}</b>`],['Montant reçu',`<b>${money(vs)}</b>`],['Reste à recevoir',`<b>${money(r)}</b>`],['Mode de paiement',h(v.modePaie||'—')],['Date du paiement',vs?dp:'—']].map(([a,b])=>`<tr><td ${c}>${a}</td><td ${c}>${b}</td></tr>`).join('')}</table>
+  <table style="width:100%;border-collapse:collapse">${[['Employé',`<b>${h(e.nom)}</b>`],['N° employé',h(numE(e))],['Fonction',h(e.poste||'—')],['Net à payer',`<b>${money(net)}</b>`],['Montant reçu',`<b>${money(vs)}</b>`],['Reste à recevoir',`<b>${money(r)}</b>`],['Mode de paiement',h(v.modePaie||'—')],['Caisse',vs?h(caisseV(v)):'—'],['Date du paiement',vs?dp:'—']].map(([a,b])=>`<tr><td ${c}>${a}</td><td ${c}>${b}</td></tr>`).join('')}</table>
   <p style="font-size:7.5pt;margin:4pt 0">${vs?`Je soussigné(e) ${h(e.nom)} reconnais avoir reçu la somme de ${h(enLettres(vs))} (${money(vs)}).`:`Salaire de ${moisTxt(p).toLowerCase()} non encore reçu (${money(net)}).`}</p>
   <p align="center" style="margin:3pt 0"><span style="font-size:11pt;font-weight:bold;border:2px solid ${v.statut==='paye'?'#1E7A4C':'#B3264F'};color:${v.statut==='paye'?'#1E7A4C':'#B3264F'};padding:1pt 6pt">${st}</span></p>
   <table style="width:100%;border-collapse:collapse"><tr><td ${s}><b>Signature de l’employé</b><br><br>${h(e.nom)}</td><td ${s}><b>Cachet de l’administrateur</b>${img('cachetAdmin')}<br>${h(nomAdmin())}</td></tr></table></div>`;
@@ -4845,7 +4865,7 @@ async function debloquerAcces(){
 function imprimeurs(){ return [...new Set([USER&&USER.nom,impPar,...COMPTES().map(c=>c.nom),S.responsable,...String(S.responsables||'').split(',')].map(x=>String(x||'').trim()).filter(Boolean))]; }
 const imprimeur=()=>impPar||(USER&&USER.nom)||S.responsable||'';
 const maintenant=()=>{ const d=new Date(); return pad(d.getDate())+'/'+pad(d.getMonth()+1)+'/'+d.getFullYear()+' à '+pad(d.getHours())+'h'+pad(d.getMinutes()); };
-async function payerAuj(id){ document.querySelectorAll('.modal').forEach(x=>x.remove()); await marquerPaye(id); voirBulletin(id); }
+async function payerAuj(id){ document.querySelectorAll('.modal').forEach(x=>x.remove()); await marquerPaye(id); const e=EMP.find(x=>x.id===id); if(e&&bv(e,pp).statut==='paye') voirBulletin(id); }
 function payeAujMois(){ document.getElementById('mm_datePaye').value=auj(); document.getElementById('mm_statut').value='paye'; }
 /* Dépenses par type */
 function rubrique(c){ if(c.cat) return c.cat; const t=normT(c.note);

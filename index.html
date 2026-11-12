@@ -367,7 +367,7 @@ const IC = {
 const NAV = [['menu','Menu principal','menu'],['home','Accueil','home'],['facture','Facture','fac'],['registre','Registre','reg'],['journal','Journal des saisies','reg'],['charges','Charges','chg'],['employes','Employés','emp'],['paie','Paie','pay'],['pdg','PDG','pdg'],['compte','Compte SNI','rap'],['tracto','Tractopelle','trc'],['wusu','Wusukani Wamasiwa','wus'],['param','Paramètres','par']];
 const svg = k => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${IC[k]}</svg>`;
 let view = 'menu';
-const VERSION_APP='2.0.104';
+const VERSION_APP='2.0.105';
 /* Créateur du logiciel : coordonnées fixes, intégrées au code (identiques dans chaque installation, non modifiables) */
 const CREATEUR={nom:'ALI DAÏM',email:'daim3575@gmail.com',tels:['+269 323 05 70','+269 432 29 14']};
 const waLien=t=>'https://wa.me/'+t.replace(/\D/g,'');
@@ -804,7 +804,7 @@ function stats(period){
   const D=fs.filter(f=>f.type==='D'), P=fs.filter(f=>f.type==='P');
   const Pwait=P.filter(f=>!f.convertie);
   const sum=(a,k)=>a.reduce((s,f)=>s+calc(f)[k],0);
-  const cs=CHG.filter(c=>inPeriod(c.date,period));
+  const cs=CHG.filter(c=>inPeriod(c.date,period)&&!salAilleurs(c));
   const ch={electricite:0,salaire:0,autre:0,variable:0}; cs.forEach(c=>{ ch[c.type]=(ch[c.type]||0)+n0(c.montant); });
   const R=resultatDetail(d=>inPeriod(d,period)), totCh=R.fixes+R.variables+R.salaires;
   const ht=sum(D,'ht'), tva=sum(D,'tva'), ttc=sum(D,'ttc'), rem=sum(D,'rem');
@@ -819,7 +819,8 @@ function stats(period){
 function resultatDetail(dans,parU){
   const ok=x=>!parU||parU(x);
   const D=FAC.filter(f=>f.type==='D'&&dans(f.date)&&ok(f)).sort((a,b)=>String(a.date).localeCompare(String(b.date)));
-  const cs=CHG.filter(c=>dans(c.date)&&ok(c)).sort((a,b)=>String(a.date).localeCompare(String(b.date)));
+  /* un salaire payé par la caisse Tractopelle ou Wusukani va dans le compte de cette caisse, pas dans celui de SNI */
+  const cs=CHG.filter(c=>dans(c.date)&&ok(c)&&!salAilleurs(c)).sort((a,b)=>String(a.date).localeCompare(String(b.date)));
   const F=cs.filter(c=>c.type!=='variable'&&c.type!=='salaire'), V=cs.filter(c=>c.type==='variable'), Sa=cs.filter(c=>c.type==='salaire');
   /* Les factures appartiennent à SNI : seule la partie SNI du compte du PDG entre dans ce résultat
      (RIA, Tractopelle, Commission de transfert… ont leurs propres bilans dans le rapport « PDG par partie ») */
@@ -2231,21 +2232,19 @@ function trCalc(){ const hh=heuresEntre(val('tr_e'),val('tr_s'),val('tr_dj')), p
   if(ai) ai.textContent=dav?'Ce client a déjà donné une avance de '+money(dav)+' : elle sera déduite automatiquement de ce travail.':'';
   set('tr_h',fmtHMS(hh)+(hh?' ('+String(Math.round(hh*100)/100).replace('.',',')+' h)':'')); set('tr_mt',money(mt)); set('tr_rest',money(Math.max(0,mt-(paye?mt:av+ded)))); }
 async function addTracto(){
-  const d=val('tr_d')||auj(), client=String(val('tr_cl')||'').trim(), e=val('tr_e'), s=val('tr_s'), pu=n0(val('tr_pu')), paye=val('tr_pay')!=='credit', av=paye?0:n0(val('tr_av'));
-  if(!client){ toast('Indiquez le client'); document.getElementById('tr_cl').focus(); return; }
-  if(!e||!s){ toast('Indiquez l’heure d’entrée et l’heure de sortie'); return; }
-  const dj=val('tr_dj'), hh=heuresEntre(e,s,dj); if(hh<=0){ toast('Le total des heures est à 0 : vérifiez les heures'); return; }
-  if(pu<=0){ toast('Indiquez le prix unitaire de l’heure'); document.getElementById('tr_pu').focus(); return; }
-  const mt=Math.round(hh*pu);
+  /* Aucune case n'est obligatoire : on peut enregistrer un travail incomplet et le compléter plus tard avec « Modifier » */
+  const d=val('tr_d')||auj(), client=String(val('tr_cl')||'').trim()||'Client non indiqué', e=val('tr_e'), s=val('tr_s'), pu=n0(val('tr_pu')), paye=val('tr_pay')!=='credit', av=paye?0:n0(val('tr_av'));
+  const dj=val('tr_dj'), hh=e&&s?Math.max(0,heuresEntre(e,s,dj)):0;
+  const mt=Math.round(hh*pu), hT=e?hms(e):new Date().toTimeString().slice(0,8);
   /* avances déjà données par ce client avant le travail : déduites automatiquement */
   const AV=[]; let dispo=mt; trAvDispo(client).forEach(a=>{ const k=Math.min(trAvReste(a),dispo); if(k>0){ AV.push({id:uid(),num:a.num,date:a.date,montant:k,moyen:a.moyen||'Espèces',avance:true,avId:a.id}); dispo-=k; } });
   const dejaAv=mt-dispo;
   if(av+dejaAv>mt){ toast('L’avance dépasse le prix du client ('+money(mt)+(dejaAv?', dont '+money(dejaAv)+' d’avance déjà reçue':'')+')'); return; }
-  const id=uid(), num=nextTr('TP',d), x={id,kind:'travail',num,date:new Date(d+'T'+hms(e)).toISOString(),client,tel:String(val('tr_tel')||'').trim(),lieu:String(val('tr_lieu')||'').trim(),nature:String(val('tr_nat')||'').trim(),chauffeur:val('tr_ch')||'',taux:tauxDe(val('tr_ch')||''),entree:e,sortie:s,dej:secondesDe(dj)?hms(dj):'',heures:hh,prix:pu,montant:mt,paiements:[]};
+  const id=uid(), num=nextTr('TP',d), x={id,kind:'travail',num,date:new Date(d+'T'+hT).toISOString(),client,tel:String(val('tr_tel')||'').trim(),lieu:String(val('tr_lieu')||'').trim(),nature:String(val('tr_nat')||'').trim(),chauffeur:val('tr_ch')||'',taux:tauxDe(val('tr_ch')||''),entree:e,sortie:s,dej:secondesDe(dj)?hms(dj):'',heures:hh,prix:pu,montant:mt,paiements:[]};
   /* Par défaut le client paie tout à l'enregistrement : le travail est « Payé » ; sinon on note l'avance */
   x.paiements.push(...AV);
-  if(paye){ if(mt-dejaAv>0) x.paiements.push({id:uid(),num:nextTr('TPP',d),date:new Date(d+'T'+hms(e)).toISOString(),montant:mt-dejaAv,moyen:val('tr_avm')||'Espèces',comptant:true}); }
-  else if(av>0) x.paiements.push({id:uid(),num:nextTr('TPA',d),date:new Date(d+'T'+hms(e)).toISOString(),montant:av,moyen:val('tr_avm')||'Espèces',avance:true});
+  if(paye){ if(mt-dejaAv>0) x.paiements.push({id:uid(),num:nextTr('TPP',d),date:new Date(d+'T'+hT).toISOString(),montant:mt-dejaAv,moyen:val('tr_avm')||'Espèces',comptant:true}); }
+  else if(av>0) x.paiements.push({id:uid(),num:nextTr('TPA',d),date:new Date(d+'T'+hT).toISOString(),montant:av,moyen:val('tr_avm')||'Espèces',avance:true});
   await put('tracto',x); journal('Tractopelle : '+num+' – '+client+' – '+fmtH(hh)+' – '+money(mt));
   toast((dejaAv?'Avance de '+money(dejaAv)+' déduite – ':'')+(trPaye(x)?'Travail enregistré : payé':'Travail enregistré : reste '+money(trSolde(x)))); render(); trRecu(id);
 }
@@ -2265,12 +2264,12 @@ function tmCalc(){ const hh=heuresEntre(val('tm_e'),val('tm_s'),val('tm_dj')), m
 async function trEnregModif(id){
   const x=TRC.find(t=>t.id===id); if(!x) return;
   const d=val('tm_d')||locD(x.date).slice(0,10), e=val('tm_e'), s=val('tm_s'), pu=n0(val('tm_pu')), client=String(val('tm_cl')||'').trim();
-  if(!client){ toast('Indiquez le client'); return; } const dj=val('tm_dj'), hh=heuresEntre(e,s,dj); if(hh<=0){ toast('Le total des heures est à 0 : vérifiez les heures'); return; } if(pu<=0){ toast('Indiquez le prix unitaire de l’heure'); return; }
+  const dj=val('tm_dj'), hh=e&&s?Math.max(0,heuresEntre(e,s,dj)):0; /* cases facultatives, comme à l'ajout */
   const mt=Math.round(hh*pu); let P=[...(x.paiements||[])];
   /* jamais plus payé que le nouveau prix : on réduit d'abord les derniers paiements */
   let trop=P.reduce((a,p)=>a+n0(p.montant),0)-mt; for(let i=P.length-1;i>=0&&trop>0;i--){ const k=Math.min(n0(P[i].montant),trop); P[i]={...P[i],montant:n0(P[i].montant)-k}; trop-=k; } P=P.filter(p=>n0(p.montant)>0);
   if(val('tm_pay')==='paye'){ const reste=mt-P.reduce((a,p)=>a+n0(p.montant),0); if(reste>0) P.push({id:uid(),num:nextTr('TPP',d),date:new Date().toISOString(),montant:reste,moyen:val('tm_m')||'Espèces',comptant:true}); }
-  const nx={...x,date:new Date(d+'T'+hms(e)).toISOString(),client,tel:String(val('tm_tel')||'').trim(),lieu:String(val('tm_lieu')||'').trim(),nature:String(val('tm_nat')||'').trim(),chauffeur:val('tm_ch')||x.chauffeur,taux:(val('tm_ch')||x.chauffeur)===x.chauffeur&&x.taux!=null?x.taux:tauxDe(val('tm_ch')||x.chauffeur),entree:e,sortie:s,dej:secondesDe(dj)?hms(dj):'',heures:hh,prix:pu,montant:mt,paiements:P};
+  const nx={...x,date:new Date(d+'T'+(e?hms(e):(new Date(x.date).toTimeString().slice(0,8)||'12:00:00'))).toISOString(),client:client||'Client non indiqué',tel:String(val('tm_tel')||'').trim(),lieu:String(val('tm_lieu')||'').trim(),nature:String(val('tm_nat')||'').trim(),chauffeur:val('tm_ch')||x.chauffeur,taux:(val('tm_ch')||x.chauffeur)===x.chauffeur&&x.taux!=null?x.taux:tauxDe(val('tm_ch')||x.chauffeur),entree:e,sortie:s,dej:secondesDe(dj)?hms(dj):'',heures:hh,prix:pu,montant:mt,paiements:P};
   await put('tracto',nx); journal('Tractopelle : travail modifié '+x.num+' – '+client+' – '+money(mt));
   document.querySelector('.modal')?.remove(); toast('Travail modifié : '+(trPaye(nx)?'Payé':'reste '+money(trSolde(nx)))); render();
 }
@@ -2314,6 +2313,7 @@ function trLignesCompte(){
   if(!trCh) [...trCharges(),...trMecas()].filter(c=>!c.travail&&dansTrP(c.date)).forEach(c=>L.push({k:c.kind,x:c,date:c.date,num:c.num||'—',
     des:c.kind==='meca'?'Mécanicien '+(c.mecanicien||'')+' – '+(c.travailFait||''):(c.type==='fixe'?'Charge fixe':'Charge variable')+' – '+c.categorie+(c.libelle?' – '+c.libelle:'')+(c.litres?' – '+carbTxt(c):''),
     det:c.kind==='meca'?{ch:0,fx:0,va:0,me:n0(c.montant)}:{ch:0,fx:c.type==='fixe'?n0(c.montant):0,va:c.type==='fixe'?0:n0(c.montant),me:0},deb:n0(c.montant),cre:0}));
+  if(!trCh) salairesDe('Caisse Tractopelle').filter(c=>dansTrP(c.date)).forEach(c=>L.push({k:'sal',x:c,date:c.date,num:'—',des:'Salaire payé par la caisse Tractopelle – '+(c.note||''),det:{ch:0,fx:n0(c.montant),va:0,me:0},deb:n0(c.montant),cre:0}));
   if(!trCh) trPdgLignes().forEach(l=>L.push(l));
   /* avance reçue pour un travail pas encore fait : au crédit tant qu'elle n'est pas déduite d'un travail */
   if(!trCh) trAvances().filter(a=>trAvReste(a)>0&&dansTrP(a.date)).forEach(a=>L.push({k:'av',x:a,date:a.date,num:a.num,des:'Avance de '+a.client+' pour un travail pas encore fait',det:{ch:0,fx:0,va:0,me:0},deb:0,cre:trAvReste(a)}));
@@ -3319,6 +3319,12 @@ async function remettreSalaire(id){
 /* Caisse d'où sort l'argent du salaire (choisie au moment de valider le paiement) */
 const CAISSES_PAIE=['Caisse SNI','Caisse Tractopelle','Caisse Wusukani Wamasiwa','Caisse du PDG','Banque','Mobile money'];
 const caisseV=v=>(v&&v.caisse)||'Caisse SNI';
+/* Le salaire est déduit du compte de la caisse choisie : SNI (et Banque, Mobile money, PDG) → compte SNI ;
+   Caisse Tractopelle → tableau de compte du tractopelle ; Caisse Wusukani Wamasiwa → compte Wusukani */
+const caisseSal=c=>{ const e=EMP.find(x=>x.id===c.emp); return e?caisseV(bv(e,ym(c.date))):'Caisse SNI'; };
+const salAilleurs=c=>c.type==='salaire'&&/Tractopelle|Wusukani/.test(caisseSal(c));
+const salairesDe=k=>CHG.filter(c=>c.type==='salaire'&&caisseSal(c)===k);
+const wuSalaires=()=>salairesDe('Caisse Wusukani Wamasiwa').map(c=>({id:c.id,kind:'charge',sal:true,type:'fixe',categorie:'Salaire',libelle:(c.note||'')+' – payé par la caisse Wusukani',montant:c.montant,date:c.date,num:'—',moyen:'',par:''}));
 async function marquerPaye(id,caisse){
   const e0=EMP.find(x=>x.id===id); if(!e0) return;
   if(!caisse){ caisse=await choisirCaisse(e0.nom,caisseV(bv(e0,pp))); if(!caisse) return; }
@@ -3681,7 +3687,7 @@ function wuDocs(id){ const x=WUS.find(t=>t.id===id); if(!x) return; ouvrirRecu('
 function wuFacture(id){ const x=WUS.find(t=>t.id===id); if(x) ouvrirRecu('Facture '+h(String(x.num).replace('WMV','WMF')),wuFactureHTML(x),'facture-'+String(x.num).replace('WMV','WMF')+'.pdf'); }
 /* Journal des dépenses de WUSUKANI WAMASIWA : même période que le tableau de compte (un mois, une année ou tout) */
 let wuDepT='';
-const wuDeps=p=>WUS.filter(x=>x.kind==='charge'&&wuIn(x.date,p)&&(!wuDepT||x.type===(wuDepT==='fixe'?'fixe':'variable')||(wuDepT==='variable'&&x.type!=='fixe'))).sort((a,b)=>String(b.date).localeCompare(String(a.date)));
+const wuDeps=p=>[...WUS,...wuSalaires()].filter(x=>x.kind==='charge'&&wuIn(x.date,p)&&(!wuDepT||x.type===(wuDepT==='fixe'?'fixe':'variable')||(wuDepT==='variable'&&x.type!=='fixe'))).sort((a,b)=>String(b.date).localeCompare(String(a.date)));
 const wuDepTitre=p=>'Journal des dépenses '+WNOM+(!p?' – tout le compte':p.length===4?' – année '+p:' – '+moisTxt(p));
 function wuDepCard(){
   const p=wuPer(), L=wuDeps(p), fx=L.filter(x=>x.type==='fixe').reduce((s,x)=>s+n0(x.montant),0), va=L.filter(x=>x.type!=='fixe').reduce((s,x)=>s+n0(x.montant),0);
@@ -3692,7 +3698,7 @@ function wuDepCard(){
     <div class="row" style="margin-bottom:.8rem"><label class="f" style="flex:0 0 auto">Afficher<select style="width:auto" onchange="wuVue=this.value;render()"><option value="mois" ${wuVue==='mois'?'selected':''}>Un mois</option><option value="annee" ${wuVue==='annee'?'selected':''}>Une année entière</option><option value="tout" ${wuVue==='tout'?'selected':''}>Tout le compte</option></select></label>${wuVue==='mois'?choixMoisAn('wudm',wuP,'wuP=v||wuP;render()'):wuVue==='annee'?`<label class="f" style="flex:0 0 auto">Année<select style="width:auto" onchange="wuP=this.value+wuP.slice(4);render()">${wuAns().map(a=>`<option ${a===wuP.slice(0,4)?'selected':''}>${a}</option>`).join('')}</select></label>`:''}
       <label class="f" style="flex:0 0 220px">Type de dépense<select onchange="wuDepT=this.value;render()"><option value="">Toutes</option><option value="fixe" ${wuDepT==='fixe'?'selected':''}>Charges fixes</option><option value="variable" ${wuDepT==='variable'?'selected':''}>Charges variables</option></select></label></div>
     ${L.length?`<div class="scroll"><table><thead><tr><th>Date</th><th>N°</th><th>Type</th><th>Catégorie</th><th>Détail</th><th>Moyen</th><th>Par</th><th class="r">Montant</th><th></th></tr></thead><tbody>
-    ${L.map(x=>`<tr><td>${dOnly(x.date)}</td><td>${h(x.num||'—')}</td><td>${x.type==='fixe'?'Charge fixe':'Charge variable'}</td><td>${h(x.categorie||'—')}</td><td>${h(x.libelle||'—')}</td><td>${h(x.moyen||'—')}</td><td>${h(x.par||'—')}</td><td class="r num"><b>${money(x.montant)}</b></td><td><button class="btn sm danger" onclick="wuSuppr('${x.id}')">Supprimer</button></td></tr>`).join('')}
+    ${L.map(x=>`<tr><td>${dOnly(x.date)}</td><td>${h(x.num||'—')}</td><td>${x.type==='fixe'?'Charge fixe':'Charge variable'}</td><td>${h(x.categorie||'—')}</td><td>${h(x.libelle||'—')}</td><td>${h(x.moyen||'—')}</td><td>${h(x.par||'—')}</td><td class="r num"><b>${money(x.montant)}</b></td><td>${x.sal?'<span class="tag">Salaire (page Paie)</span>':`<button class="btn sm danger" onclick="wuSuppr('${x.id}')">Supprimer</button>`}</td></tr>`).join('')}
     <tr style="font-weight:700"><td colspan="7">Total (${L.length} dépense${L.length>1?'s':''})</td><td class="r num">${money(fx+va)}</td><td></td></tr></tbody></table></div>`
     :`<div class="empty">Aucune dépense pour ${h(wuPerTxt(p))}.</div>`}
     <div class="kpis" style="margin-top:.8rem"><div class="kpi amber"><small>Charges fixes</small><b class="num">${money(fx)}</b></div><div class="kpi amber"><small>Charges variables</small><b class="num">${money(va)}</b></div><div class="kpi unpaid"><small>Total des dépenses</small><b class="num">${money(fx+va)}</b></div></div></div>`;
@@ -3747,6 +3753,8 @@ function wuLignes(p){
   /* paiement reçu ce mois-ci pour une vente d'un mois précédent : au crédit à sa date */
   WUS.filter(x=>x.kind==='vente'&&!wuIn(x.date,p)&&okQ(x)).forEach(x=>(x.paiements||[]).filter(q=>wuIn(q.date,p)).forEach(q=>L.push({k:'p',x,q,date:q.date,deb:0,cre:n0(q.montant)})));
   WUS.filter(x=>x.kind==='charge'&&wuIn(x.date,p)&&okQ(x)).forEach(x=>L.push({k:'c',x,date:x.date,deb:n0(x.montant),cre:0,dej:estDej({cat:x.categorie,des:x.libelle})?n0(x.montant):0}));
+  /* salaires payés par la caisse WUSUKANI WAMASIWA (page Paie) : au débit, comme une charge fixe */
+  if(!wuCel) wuSalaires().filter(x=>wuIn(x.date,p)&&okQ(x)).forEach(x=>L.push({k:'c',x,date:x.date,deb:n0(x.montant),cre:0,dej:0}));
   /* transactions du PDG dans la caisse WUSUKANI WAMASIWA : emprunts au débit, remboursements et apports au crédit */
   if(!wuQ&&!wuCel) wuPdg().forEach(t=>{
     if(estApport(t)){ if(wuIn(t.date,p)) L.push({k:'pa',x:t,date:t.date,deb:0,cre:n0(t.montant)}); return; }
@@ -3814,7 +3822,7 @@ function wuCompteCard(){
       <td>${h(wuRecuNum(l))}</td>
       <td>${l.k==='c'?'<span class="tag">Dépense</span>':l.k==='p'||l.k==='pr'||l.k==='pa'?`<span class="tag paid">${wuStat(l)}</span>`:l.k==='pe'?tagP(x):wuReste(x)?`<span class="tag unpaid">${wuStat(l)}</span><br><small>Reste ${money(wuReste(x))}</small>`:'<span class="tag paid">Payé</span>'}</td>
       <td><div class="btns" style="flex-wrap:nowrap">${pg?`<button class="btn sm" onclick="${l.k==='pr'&&l.r.id?`voirRecuRemb('${x.id}','${l.r.id}')`:`voirRecu('${x.id}')`}">Reçu</button>${l.k==='pe'&&resteP(x)>0?`<button class="btn sm pri" onclick="rembPdg('${x.id}')">Rembourser</button>`:''}`
-        :`${v?`<button class="btn sm" onclick="wuFacture('${x.id}')">Facture</button><button class="btn sm" onclick="wuModifier('${x.id}')">Modifier</button>`:''}${l.k!=='c'?`<button class="btn sm" onclick="wuRecu('${x.id}')">Reçu</button>`:''}${v&&wuReste(x)?`<button class="btn sm pri" onclick="wuEncaisser('${x.id}')">Encaisser</button>`:''}${l.k!=='p'?`<button class="btn sm danger" onclick="wuSuppr('${x.id}')">Supprimer</button>`:''}`}</div></td></tr>`; }).join('')}
+        :`${v?`<button class="btn sm" onclick="wuFacture('${x.id}')">Facture</button><button class="btn sm" onclick="wuModifier('${x.id}')">Modifier</button>`:''}${l.k!=='c'?`<button class="btn sm" onclick="wuRecu('${x.id}')">Reçu</button>`:''}${v&&wuReste(x)?`<button class="btn sm pri" onclick="wuEncaisser('${x.id}')">Encaisser</button>`:''}${l.k!=='p'&&!x.sal?`<button class="btn sm danger" onclick="wuSuppr('${x.id}')">Supprimer</button>`:''}`}</div></td></tr>`; }).join('')}
     <tr style="font-weight:700"><td colspan="4">Total</td><td class="r num">${money(T.dej)}</td><td class="r num">${fmt(T.qte)}</td><td class="r num">${money(T.pu)}</td><td class="r num">${money(T.ventes)}</td><td class="r num">${money(T.deb)}</td><td class="r num">${money(T.cre)}</td><td class="r num">${sgn(T.cre-T.deb)}</td><td colspan="3"></td></tr></tbody></table></div>`
     :`<div class="empty">Aucune opération pour ${h(wuPerTxt(wuPer()))}${wuQ?' pour « '+h(wuQ)+' »':''}.</div>`}
     <div class="kpis" style="margin-top:.8rem"><div class="kpi"><small>Ventes de la période</small><b class="num">${money(T.ventes)}</b></div><div class="kpi"><small>Total des quantités</small><b class="num">${fmt(T.qte)}</b></div><div class="kpi"><small>Total des prix unitaires</small><b class="num">${money(T.pu)}</b></div><div class="kpi amber"><small>Charges fixes</small><b class="num">${money(T.fx)}</b></div><div class="kpi amber"><small>Charges variables</small><b class="num">${money(T.va)}</b></div><div class="kpi amber"><small>Emprunts du PDG</small><b class="num">${money(T.pdg)}</b></div><div class="kpi paid"><small>Remboursements du PDG</small><b class="num">${money(T.rb)}</b></div><div class="kpi unpaid"><small>Total débit</small><b class="num">${money(T.deb)}</b></div><div class="kpi paid"><small>Total crédit</small><b class="num">${money(T.cre)}</b></div><div class="kpi ${T.cre-T.deb>=0?'paid':'unpaid'}"><small>Solde (crédit − débit)</small><b class="num">${money(T.cre-T.deb)}</b></div><div class="kpi unpaid"><small>Reste à encaisser</small><b class="num">${money(T.reste)}</b></div></div></div>`;

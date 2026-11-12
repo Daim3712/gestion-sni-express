@@ -367,7 +367,7 @@ const IC = {
 const NAV = [['menu','Menu principal','menu'],['home','Accueil','home'],['facture','Facture','fac'],['registre','Registre','reg'],['journal','Journal des saisies','reg'],['charges','Charges','chg'],['employes','Employés','emp'],['paie','Paie','pay'],['pdg','PDG','pdg'],['compte','Compte SNI','rap'],['tracto','Tractopelle','trc'],['wusu','Wusukani Wamasiwa','wus'],['param','Paramètres','par']];
 const svg = k => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${IC[k]}</svg>`;
 let view = 'menu';
-const VERSION_APP='2.0.106';
+const VERSION_APP='2.0.107';
 /* Créateur du logiciel : coordonnées fixes, intégrées au code (identiques dans chaque installation, non modifiables) */
 const CREATEUR={nom:'ALI DAÏM',email:'daim3575@gmail.com',tels:['+269 323 05 70','+269 432 29 14']};
 const waLien=t=>'https://wa.me/'+t.replace(/\D/g,'');
@@ -2142,7 +2142,8 @@ const trLies=x=>[...trCharges(),...trMecas()].filter(c=>c.travail===x.id);
 function trDebitDet(x){ const L=trLies(x), s=f=>L.filter(f).reduce((a,c)=>a+n0(c.montant),0);
   return {ch:trPaieCh(x),fx:s(c=>c.kind==='charge'&&c.type==='fixe'),va:s(c=>c.kind==='charge'&&c.type!=='fixe'),me:s(c=>c.kind==='meca')}; }
 /* Le salaire du mois de ce chauffeur a-t-il été marqué payé (bulletin) ? */
-const trChPaye=x=>TRC.some(p=>p.kind==='paie'&&p.id===trPaieId(x.chauffeur,locD(x.date).slice(0,7)));
+const trChPaye=x=>{ const mo=locD(x.date).slice(0,7), p=TRC.find(q=>q.kind==='paie'&&q.id===trPaieId(x.chauffeur,mo)); if(!p) return false;
+  const du=trTravaux().filter(t=>t.chauffeur===x.chauffeur&&locD(t.date).slice(0,7)===mo).reduce((s,t)=>s+trPaieCh(t),0); return trPayeDe(p)>=du; };
 const trDebit=x=>{ const d=trDebitDet(x); return d.ch+d.fx+d.va+d.me; };
 const detDebit=d=>[d.ch?'Chauffeur '+fmt(d.ch):'',d.fx?'Fixes '+fmt(d.fx):'',d.va?'Variables '+fmt(d.va):'',d.me?'Mécanicien '+fmt(d.me):'',d.pdg?'Emprunt du PDG '+fmt(d.pdg):''].filter(Boolean).join(' · ');
 const trChoixTravail=(id,sel)=>`<select id="${id}"><option value="">— Aucun (charge générale) —</option>${trTravaux().sort((a,b)=>b.date.localeCompare(a.date)).slice(0,80).map(t=>`<option value="${t.id}" ${t.id===sel?'selected':''}>${h(t.num)} – ${h(t.client)} – ${dOnly(t.date)}</option>`).join('')}</select>`;
@@ -2216,6 +2217,7 @@ function vTracto(m){
   ${trPdgCard()}
   ${trBilanCard()}
   ${trBulletinCard()}
+  ${trJournalPaieCard()}
   ${trPersonnelCard()}
   ${trReglagesCard()}`;
   trCalc();
@@ -2665,7 +2667,7 @@ function trBulletinCard(){
   return `<div class="card"><h2>Bulletin de paie du chauffeur (payé à l’heure)</h2>
     <div class="row" style="margin-bottom:.6rem;align-items:flex-end"><label class="f" style="flex:0 0 auto">Chauffeur<select style="width:auto" onchange="trBul.ch=this.value;render()">${chs.map(c=>`<option ${trBul.ch===c?'selected':''}>${h(c)}</option>`).join('')||'<option value="">Aucun chauffeur</option>'}</select></label>
       ${choixMoisAn('trbm',trBul.mois,"if(v){trBul.mois=v;render();}")}</div>
-    ${trBul.ch?`<p>${L.length} travail(aux) · <b>${fmtH(hh)}</b> × ${money(tx)} de l’heure = <b>${money(du)}</b> ${p?'<span class="tag paid">Payé le '+dOnly(p.date)+'</span>':du?'<span class="tag unpaid">Non payé</span>':''}</p>
+    ${trBul.ch?`<p>${L.length} travail(aux) · <b>${fmtH(hh)}</b> × ${money(tx)} de l’heure = <b>${money(du)}</b> ${p&&trPayeDe(p)<du?'<span class="tag unpaid">Payé en partie : '+money(trPayeDe(p))+' – reste '+money(du-trPayeDe(p))+'</span>':p?'<span class="tag paid">Payé le '+dOnly(p.date)+'</span>':du?'<span class="tag unpaid">Non payé</span>':''}</p>
     <div class="btns"><button class="btn pri" onclick="trVoirBulletin()">Aperçu du bulletin</button>${du&&!p?'<button class="btn" onclick="trPayerChauffeur()">Marquer le salaire payé</button>':''}${p?'<button class="btn" onclick="trAnnulerPaie()">Annuler le paiement</button>':''}</div>
     ${tx?'':'<p class="muted" style="margin-bottom:0">Indiquez le taux de l’heure du chauffeur dans « Personnel du tractopelle » ci-dessous.</p>'}`:'<p class="muted" style="margin:0">Ajoutez d’abord un chauffeur dans « Personnel du tractopelle ».</p>'}</div>`;
 }
@@ -2690,6 +2692,79 @@ async function trPayerChauffeur(){
   journal('Tractopelle : salaire du chauffeur '+trBul.ch+' payé ('+trBul.mois+') '+money(du)); toast('Salaire marqué payé'); render(); trVoirBulletin();
 }
 async function trAnnulerPaie(){ if(!confirm('Annuler le paiement du salaire ?')) return; if(!await codeSuppr('annuler le paiement du chauffeur')) return; await del('tracto',trPaieId(trBul.ch,trBul.mois)); journal('Tractopelle : paiement du chauffeur annulé '+trBul.ch+' '+trBul.mois); render(); }
+/* Journal de paie des chauffeurs : chaque chauffeur et chaque mois, dû / payé / reste, avec modification */
+let trJpCh='', trJpS='';
+const trPayeDe=p=>p?n0(p.paye!=null?p.paye:p.montant):0;
+function trJpLignes(){
+  const T=trTravaux(), chs=[...new Set([...nomsChauf(),...T.map(x=>x.chauffeur).filter(Boolean),...TRC.filter(p=>p.kind==='paie').map(p=>p.chauffeur)])];
+  const R=[];
+  chs.forEach(ch=>{
+    const mois=[...new Set([...T.filter(x=>x.chauffeur===ch).map(x=>locD(x.date).slice(0,7)),...TRC.filter(p=>p.kind==='paie'&&p.chauffeur===ch).map(p=>p.mois)])];
+    mois.forEach(mo=>{
+      const L=T.filter(x=>x.chauffeur===ch&&locD(x.date).slice(0,7)===mo), du=L.reduce((s,x)=>s+trPaieCh(x),0), hh=L.reduce((s,x)=>s+n0(x.heures),0);
+      const p=TRC.find(x=>x.id===trPaieId(ch,mo)), pa=trPayeDe(p), reste=Math.max(0,du-pa);
+      if(!du&&!p) return;
+      R.push({ch,mo,n:L.length,hh,du,p,pa,reste,st:p&&reste<=0?'p':p?'pp':'np'});
+    });
+  });
+  return R.sort((a,b)=>b.mo.localeCompare(a.mo)||a.ch.localeCompare(b.ch));
+}
+const trJpTag=r=>r.st==='p'?'<span class="tag paid">Payé</span>':r.st==='pp'?'<span class="tag unpaid">Payé en partie</span>':'<span class="tag unpaid">Non payé</span>';
+function trJpFiltre(){ return trJpLignes().filter(r=>(!trJpCh||r.ch===trJpCh)&&(!trJpS||(trJpS==='np'?r.st!=='p':r.st==='p'))); }
+function trJournalPaieCard(){
+  const A=trJpLignes(), L=trJpFiltre(), chs=[...new Set(A.map(r=>r.ch))];
+  const tD=L.reduce((s,r)=>s+r.du,0), tP=L.reduce((s,r)=>s+r.pa,0), tR=L.reduce((s,r)=>s+r.reste,0);
+  return `<div class="card"><div class="head" style="margin-bottom:.4rem"><div><h2 style="margin:0">Journal de paie des chauffeurs</h2><p class="muted" style="margin:.2rem 0 0">Chaque mois de chaque chauffeur : ce qui est dû, ce qui est payé et ce qui ne l’est pas encore</p></div>
+    <div class="btns"><button class="btn" onclick="trJpVoir()">Aperçu</button><button class="btn" onclick="trJpVoir(1)">Imprimer / PDF</button></div></div>
+    <div class="row" style="margin-bottom:.6rem;align-items:flex-end"><label class="f" style="flex:0 0 auto">Chauffeur<select style="width:auto" onchange="trJpCh=this.value;render()"><option value="">Tous</option>${chs.map(c=>`<option ${trJpCh===c?'selected':''}>${h(c)}</option>`).join('')}</select></label>
+      <label class="f" style="flex:0 0 auto">Afficher<select style="width:auto" onchange="trJpS=this.value;render()"><option value="">Tout</option><option value="np" ${trJpS==='np'?'selected':''}>Non payés seulement</option><option value="p" ${trJpS==='p'?'selected':''}>Payés seulement</option></select></label></div>
+    <div class="kpis" style="margin:.4rem 0 .8rem"><div class="kpi amber"><small>Total dû</small><b class="num">${money(tD)}</b></div><div class="kpi paid"><small>Total payé</small><b class="num">${money(tP)}</b></div><div class="kpi unpaid"><small>Reste à payer</small><b class="num">${money(tR)}</b></div></div>
+    ${L.length?`<div class="tw"><table><thead><tr><th>Mois</th><th>Chauffeur</th><th>Travaux</th><th>Heures</th><th>Dû</th><th>Payé</th><th>Reste</th><th>Date du paiement</th><th>État</th><th></th></tr></thead><tbody>
+    ${L.map(r=>`<tr><td>${moisTxt(r.mo)}</td><td>${h(r.ch)}</td><td class="num">${r.n}</td><td class="num">${fmtH(r.hh)}</td><td class="num">${money(r.du)}</td><td class="num">${money(r.pa)}</td><td class="num"><b>${money(r.reste)}</b></td><td>${r.p?dOnly(r.p.date):'—'}${r.p&&r.p.note?'<br><small class="muted">'+h(r.p.note)+'</small>':''}</td><td>${trJpTag(r)}</td>
+      <td><div class="btns" style="flex-wrap:nowrap"><button class="btn sm" onclick="trJpBulletin('${encodeURIComponent(r.ch)}','${r.mo}')">Bulletin</button>${r.st!=='p'&&r.du?`<button class="btn sm pri" onclick="trJpPayer('${encodeURIComponent(r.ch)}','${r.mo}')">Payer</button>`:''}<button class="btn sm" onclick="trJpModif('${encodeURIComponent(r.ch)}','${r.mo}')">Modifier</button></div></td></tr>`).join('')}
+    <tr style="font-weight:700"><td colspan="4">Total</td><td class="num">${money(tD)}</td><td class="num">${money(tP)}</td><td class="num">${money(tR)}</td><td colspan="3"></td></tr></tbody></table></div>`:`<div class="empty">${trJpS==='np'?'Aucun salaire impayé : tout est payé.':'Aucune paie de chauffeur pour le moment.'}</div>`}</div>`;
+}
+function trJpBulletin(ch,mo){ trBul.ch=decodeURIComponent(ch); trBul.mois=mo; render(); trVoirBulletin(); }
+function trJpPayer(ch,mo){ trBul.ch=decodeURIComponent(ch); trBul.mois=mo; trPayerChauffeur(); }
+function trJpModif(ch,mo){
+  ch=decodeURIComponent(ch); const r=trJpLignes().find(x=>x.ch===ch&&x.mo===mo); if(!r) return;
+  document.querySelectorAll('.modal').forEach(m=>m.remove());
+  const d=r.p?locD(r.p.date):new Date().toISOString().slice(0,10);
+  const md=modalPdg(`<div class="head" style="margin-bottom:.6rem"><h2 style="margin:0">Modifier la paie – ${h(ch)} – ${moisTxt(mo)}</h2><button class="btn" onclick="this.closest('.modal').remove()">Fermer</button></div>
+    <p>Dû pour ce mois : <b>${money(r.du)}</b> (${r.n} travail(aux), ${fmtH(r.hh)})</p>
+    <div class="row"><label class="f">Montant payé (KMF)<input id="jp_m" type="number" inputmode="numeric" min="0" value="${r.p?r.pa:r.du}"></label><label class="f">Date du paiement<input id="jp_d" type="date" value="${d}"></label></div>
+    <label class="f" style="margin-top:.6rem">Note (facultatif)<input id="jp_n" value="${h(r.p&&r.p.note||'')}" placeholder="ex. payé en espèces, avance…"></label>
+    <p class="muted">Mettre 0 ou « Marquer non payé » pour remettre ce mois en non payé.</p>
+    <div class="btns" style="margin-top:.6rem"><button class="btn pri" onclick="trJpEnreg('${encodeURIComponent(ch)}','${mo}')">Enregistrer</button>${r.p?`<button class="btn" onclick="trJpNonPaye('${encodeURIComponent(ch)}','${mo}')">Marquer non payé</button>`:''}<button class="btn" onclick="this.closest('.modal').remove()">Annuler</button></div>`);
+  md.querySelector('.in').style.maxWidth='560px';
+}
+async function trJpEnreg(ch,mo){
+  ch=decodeURIComponent(ch); const r=trJpLignes().find(x=>x.ch===ch&&x.mo===mo); if(!r) return;
+  const m=n0(val('jp_m')), d=val('jp_d')||new Date().toISOString().slice(0,10), note=String(val('jp_n')||'').trim();
+  if(m<=0){ return trJpNonPaye(encodeURIComponent(ch),mo); }
+  const id=trPaieId(ch,mo);
+  await put('tracto',Object.assign({},r.p||{},{id,kind:'paie',chauffeur:ch,mois:mo,heures:r.hh,taux:tauxDe(ch),montant:r.du,paye:m,note,date:new Date(d+'T12:00:00').toISOString()}));
+  journal('Tractopelle : paie du chauffeur modifiée '+ch+' '+mo+' – payé '+money(m)+' sur '+money(r.du));
+  document.querySelectorAll('.modal').forEach(x=>x.remove()); toast(m>=r.du?'Paie enregistrée : payé':'Paie enregistrée : reste '+money(r.du-m)); render();
+}
+async function trJpNonPaye(ch,mo){
+  ch=decodeURIComponent(ch); if(!confirm('Remettre en « Non payé » le salaire de '+ch+' ('+moisTxt(mo)+') ?')) return;
+  if(!await codeSuppr('remettre en non payé la paie du chauffeur')) return;
+  await del('tracto',trPaieId(ch,mo)); journal('Tractopelle : paie du chauffeur remise en non payé '+ch+' '+mo);
+  document.querySelectorAll('.modal').forEach(x=>x.remove()); toast('Remis en non payé'); render();
+}
+function trJpHTML(){
+  const L=trJpFiltre().slice().reverse(), c='style="padding:5px;border:1px solid #C9D2DE;font-size:10.5px"', r='style="padding:5px;border:1px solid #C9D2DE;font-size:10.5px;text-align:right"';
+  const tD=L.reduce((s,x)=>s+x.du,0), tP=L.reduce((s,x)=>s+x.pa,0), tR=L.reduce((s,x)=>s+x.reste,0);
+  return `${PAYSAGE}<div class="sheet paysage">${entete('JOURNAL DE PAIE DES CHAUFFEURS – TRACTOPELLE','JP',new Date().toISOString())}
+    <p style="font-weight:700">${trJpCh?'Chauffeur : '+h(trJpCh):'Tous les chauffeurs'}${trJpS==='np'?' – non payés seulement':trJpS==='p'?' – payés seulement':''}</p>
+    <table style="border-collapse:collapse;width:100%;margin:10px 0"><thead><tr>${['Mois','Chauffeur','Travaux','Heures','Dû','Payé','Reste','Date du paiement','État'].map(t=>`<th style="padding:5px;border:1px solid #9CC9D6;font-size:10.5px;background:#4BACC6;color:#1F3864">${t}</th>`).join('')}</tr></thead><tbody>
+    ${L.map(x=>`<tr><td ${c}>${moisTxt(x.mo)}</td><td ${c}>${h(x.ch)}</td><td ${r}>${x.n}</td><td ${r}>${fmtH(x.hh)}</td><td ${r}>${money(x.du)}</td><td ${r}>${money(x.pa)}</td><td ${r}>${money(x.reste)}</td><td ${c}>${x.p?dOnly(x.p.date):'—'}</td><td ${c}>${x.st==='p'?'Payé':x.st==='pp'?'Payé en partie':'Non payé'}</td></tr>`).join('')||`<tr><td ${c} colspan="9">Aucune ligne</td></tr>`}
+    <tr style="font-weight:700;background:#F3DADA"><td ${c} colspan="4">Total</td><td ${r}>${money(tD)}</td><td ${r}>${money(tP)}</td><td ${r}>${money(tR)}</td><td ${c} colspan="2"></td></tr></tbody></table>
+    <div class="tt"><div><span>Total dû</span><span>${money(tD)}</span></div><div><span>Total payé</span><span>${money(tP)}</span></div><div class="g"><span>Reste à payer</span><span>${money(tR)}</span></div></div>
+    <div class="bottom">${h(S.nom)} – ${h(S.adresse)}</div></div>`;
+}
+function trJpVoir(){ ouvrirRecu('Journal de paie des chauffeurs',trJpHTML(),'journal-paie-chauffeurs.pdf'); }
 /* Réglages : prix de l'heure pour les clients, taux horaire du chauffeur, liste des chauffeurs */
 function trReglagesCard(){ const R=TR();
   return `<div class="card"><h2>Réglages du tractopelle</h2><div class="row" style="align-items:flex-end">

@@ -367,7 +367,7 @@ const IC = {
 const NAV = [['menu','Menu principal','menu'],['home','Accueil','home'],['facture','Facture','fac'],['registre','Registre','reg'],['journal','Journal des saisies','reg'],['charges','Charges','chg'],['employes','Employés','emp'],['paie','Paie','pay'],['pdg','PDG','pdg'],['compte','Compte SNI','rap'],['tracto','Tractopelle','trc'],['wusu','Wusukani Wamasiwa','wus'],['param','Paramètres','par']];
 const svg = k => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${IC[k]}</svg>`;
 let view = 'menu';
-const VERSION_APP='2.0.102';
+const VERSION_APP='2.0.103';
 /* Créateur du logiciel : coordonnées fixes, intégrées au code (identiques dans chaque installation, non modifiables) */
 const CREATEUR={nom:'ALI DAÏM',email:'daim3575@gmail.com',tels:['+269 323 05 70','+269 432 29 14']};
 const waLien=t=>'https://wa.me/'+t.replace(/\D/g,'');
@@ -4406,7 +4406,12 @@ async function verifCodeSuppr(motif,k='g'){
    Ils peuvent être réactivés dans Paramètres (S.codesSuppr = true). */
 /* Depuis la 2.1.00 : toute suppression demande le code (mot de passe) de l'administrateur – au départ 3712 pour Daim3712.
    Si l'administrateur change son mot de passe, c'est le nouveau qui est demandé. */
+/* Depuis la 2.0.103 : l'administrateur supprime partout SANS code ; les autres comptes ne peuvent rien supprimer. */
 async function codeSuppr(motif,k='g'){
+  if(USER&&estAdmin(USER)){ journal('Suppression par l’administrateur : '+motif); return true; }
+  toast('Seul l’administrateur peut supprimer'); journal('Suppression refusée (compte non administrateur) : '+motif); return false;
+}
+async function codeSupprAncien(motif,k='g'){
   if(Date.now()<codeErr.jusqua){ toast('Trop d’erreurs : réessayez dans '+Math.ceil((codeErr.jusqua-Date.now())/60000)+' min'); return false; }
   const p=await demander('Code de l’administrateur pour supprimer\nPour : '+motif,'','password'); if(p==null) return false;
   for(const a of COMPTES().filter(estAdmin)){ if(await hashPin(a.id,String(p).trim())===a.pin){ codeErr.n=0; journal('Suppression autorisée par '+a.nom+' : '+motif); return true; } }
@@ -4419,7 +4424,7 @@ async function changerCodeSuppr(k='g'){
   if(S[C.champ]&&!await verifCodeSuppr('changer le '+C.nom,k)) return;
   await creerCodeSuppr(S[C.champ]?'Nouveau '+C.nom+'.':'Création du '+C.nom+'.',k); render();
 }
-const codesActifsCard=()=>`<div class="card"><h2>Code pour supprimer</h2><p class="muted" style="margin-top:0">Avant chaque suppression (facture, charge, PDG, tractopelle, Wusukani…), le logiciel demande le <b>code de l’administrateur</b> : c’est son mot de passe de connexion. Sans ce code, rien ne peut être supprimé. Après 5 codes faux, la suppression est bloquée 5 minutes.</p><p><span class="tag paid">Suppression protégée par le code de l’administrateur</span></p></div>`;
+const codesActifsCard=()=>`<div class="card"><h2>Suppression</h2><p class="muted" style="margin-top:0"><b>Seul l’administrateur</b> peut supprimer : facture, charge, PDG, tractopelle, Wusukani, compte d’un agent, d’un chef de service ou du PDG… <b>sans code</b>, après une simple confirmation « Supprimer ? ». Les autres comptes ne peuvent rien supprimer. Chaque suppression est notée dans le Journal des saisies.</p><p><span class="tag paid">Suppression sans code – administrateur seulement</span></p></div>`;
 async function activerCodes(on){
   if(!on&&!confirm('Ne plus demander de code secret pour supprimer ?')) return;
   if(!on&&S.codeSuppr&&!await verifCodeSuppr('désactiver les codes de suppression')) return;
@@ -4772,8 +4777,7 @@ function modifCompte(id){
     <div class="row" style="margin-top:.6rem"><label class="f">Rôle${fixe?`<input value="${h(roleCourt(c.role))}" disabled>`:`<select id="mc_r">${R.map(([v,t])=>`<option value="${v}" ${(c.role==='employe'?'agent':c.role)===v?'selected':''}>${t}</option>`).join('')}</select>`}</label>
       <label class="f">Adresse e-mail${fixe?'':' (facultatif)'}<input id="mc_e" type="email" value="${h(c.email||'')}"></label></div>
     <div class="row" style="margin-top:.6rem"><label class="f">Nouveau mot de passe (laisser vide pour le garder)<input id="mc_p" type="password" autocomplete="new-password"></label><label class="f">Confirmer le nouveau mot de passe<input id="mc_p2" type="password" autocomplete="new-password"></label></div>
-    <div class="btns" style="margin-top:.9rem"><button class="btn pri" onclick="enregModifCompte('${c.id}')">Enregistrer les modifications</button></div>
-    <p class="muted" style="margin-bottom:0">Le code de l’administrateur sera demandé pour enregistrer.</p>`);
+    <div class="btns" style="margin-top:.9rem"><button class="btn pri" onclick="enregModifCompte('${c.id}')">Enregistrer les modifications</button></div>`);
 }
 async function enregModifCompte(id){
   const c=COMPTES().find(x=>x.id===id); if(!c||!isAdmin()) return;

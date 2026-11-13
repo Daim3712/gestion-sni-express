@@ -364,10 +364,10 @@ const IC = {
   wus:'<path d="M3 21h18M5 21V10l7-6 7 6v11M9 21v-6h6v6M9 11h.01M15 11h.01"/>',
   par:'<circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M2 12h3M19 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1"/>'
 };
-const NAV = [['menu','Menu principal','menu'],['home','Accueil','home'],['facture','Facture','fac'],['registre','Registre','reg'],['journal','Journal des saisies','reg'],['charges','Charges','chg'],['employes','Employés','emp'],['paie','Paie','pay'],['pdg','PDG','pdg'],['compte','Compte SNI','rap'],['tracto','Tractopelle','trc'],['wusu','Wusukani Wamasiwa','wus'],['param','Paramètres','par']];
+const NAV = [['menu','Menu principal','menu'],['home','Accueil','home'],['facture','Facture','fac'],['registre','Registre','reg'],['charges','Charges','chg'],['employes','Employés','emp'],['paie','Paie','pay'],['pdg','PDG','pdg'],['compte','Compte SNI','rap'],['tracto','Tractopelle','trc'],['wusu','Wusukani Wamasiwa','wus'],['param','Paramètres','par']];
 const svg = k => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${IC[k]}</svg>`;
 let view = 'menu';
-const VERSION_APP='2.0.117';
+const VERSION_APP='2.0.118';
 /* Créateur du logiciel : coordonnées fixes, intégrées au code (identiques dans chaque installation, non modifiables) */
 const CREATEUR={nom:'ALI DAÏM',email:'daim3575@gmail.com',tels:['+269 323 05 70','+269 432 29 14']};
 const waLien=t=>'https://wa.me/'+t.replace(/\D/g,'');
@@ -863,7 +863,9 @@ function render(){
   const m=document.getElementById('main');
   if(LOCKED){ vLogin(m); return; }
   if(!autorise(view)){ view=vueDefaut(); if(view==='facture'&&!draft) newDraft(); }
-  ({menu:vMenu,home:vHome,facture:vFacture,registre:vRegistre,journal:vJournal,charges:vCharges,employes:vEmployes,paie:vPaie,pdg:vPdg,compte:vCompteSni,tracto:vTracto,wusu:vWusu,rapports:vRapports,param:vParam})[view](m);
+  const VUES={menu:vMenu,home:vHome,facture:vFacture,registre:vRegistre,charges:vCharges,employes:vEmployes,paie:vPaie,pdg:vPdg,compte:vCompteSni,tracto:vTracto,wusu:vWusu,rapports:vRapports,param:vParam};
+  if(!VUES[view]) view='menu'; /* page retirée (ex. ancien « Journal des saisies ») : retour au menu */
+  VUES[view](m);
   try{ outilsCartes(); }catch(e){}
 }
 
@@ -4759,7 +4761,7 @@ async function changerCodeSuppr(k='g'){
   if(S[C.champ]&&!await verifCodeSuppr('changer le '+C.nom,k)) return;
   await creerCodeSuppr(S[C.champ]?'Nouveau '+C.nom+'.':'Création du '+C.nom+'.',k); render();
 }
-const codesActifsCard=()=>`<div class="card"><h2>Suppression</h2><p class="muted" style="margin-top:0"><b>Seul l’administrateur</b> peut supprimer : facture, charge, PDG, tractopelle, Wusukani, compte d’un agent, d’un chef de service ou du PDG… <b>sans code</b>, après une simple confirmation « Supprimer ? ». Les autres comptes ne peuvent rien supprimer. Chaque suppression est notée dans le Journal des saisies.</p><p><span class="tag paid">Suppression sans code – administrateur seulement</span></p></div>`;
+const codesActifsCard=()=>`<div class="card"><h2>Suppression</h2><p class="muted" style="margin-top:0"><b>Seul l’administrateur</b> peut supprimer : facture, charge, PDG, tractopelle, Wusukani, compte d’un agent, d’un chef de service ou du PDG… <b>sans code</b>, après une simple confirmation « Supprimer ? ». Les autres comptes ne peuvent rien supprimer.</p><p><span class="tag paid">Suppression sans code – administrateur seulement</span></p></div>`;
 async function activerCodes(on){
   if(!on&&!confirm('Ne plus demander de code secret pour supprimer ?')) return;
   if(!on&&S.codeSuppr&&!await verifCodeSuppr('désactiver les codes de suppression')) return;
@@ -4823,10 +4825,10 @@ const COMPTES=()=>{ const L=S.comptes||[]; if(!L.some(c=>c.id===CREATEUR_ID)) S.
 const estAdmin=c=>!!c&&(c.role==='admin'||c.role==='super');
 const isAdmin=()=>!USER||estAdmin(USER);
 const superProtege=c=>c&&c.role==='super'&&!(USER&&USER.id===c.id);
-const ROLES={super:'Administrateur (créateur du logiciel – voit tout)',admin:'Administrateur (tout)',pdg:'PDG (ses propres transactions seulement)',chef:'Chef de service (factures, journal des saisies, registre)',agent:'Agent (factures seulement)',employe:'Agent (factures seulement)'};
+const ROLES={super:'Administrateur (créateur du logiciel – voit tout)',admin:'Administrateur (tout)',pdg:'PDG (ses propres transactions seulement)',chef:'Chef de service (factures et registre)',agent:'Agent (factures seulement)',employe:'Agent (factures seulement)'};
 const roleCourt=r=>({super:'Administrateur',admin:'Administrateur',pdg:'PDG',chef:'Chef de service',agent:'Agent',employe:'Agent'})[r]||'Agent';
 /* Ce que chaque compte peut voir. L'administrateur voit tout. */
-const DROITS={pdg:['menu','pdg'],chef:['menu','facture','registre','journal'],agent:['menu','facture'],employe:['menu','facture']};
+const DROITS={pdg:['menu','pdg'],chef:['menu','facture','registre'],agent:['menu','facture'],employe:['menu','facture']};
 const vueDefaut=()=>autorise('facture')?'facture':'pdg';
 const idCompte=c=>(c.login||c.nom||'').trim();
 const adminSeul=()=>false; /* chaque compte créé par l'administrateur peut se connecter, avec seulement ses droits */
@@ -5047,13 +5049,13 @@ async function refuserInscription(id){
 function comptesCard(){
   const L=COMPTES().filter(c=>!c.attente), moi=c=>USER&&USER.id===c.id;
   return `${demandesCard()}<div class="card"><h2>Comptes et sécurité</h2>
-  <p class="muted" style="margin-top:0">${L.length?'L’application demande l’identifiant et le mot de passe à chaque ouverture. <b>Seul l’administrateur voit tout et crée les comptes.</b> Le PDG voit seulement ses propres transactions ; le chef de service fait les factures et voit le journal des saisies et le registre ; l’agent fait seulement les factures.':'Aucun compte pour le moment : l’application s’ouvre sans code. Créez d’abord le compte administrateur (le vôtre).'}</p>
+  <p class="muted" style="margin-top:0">${L.length?'L’application demande l’identifiant et le mot de passe à chaque ouverture. <b>Seul l’administrateur voit tout et crée les comptes.</b> Le PDG voit seulement ses propres transactions ; le chef de service fait les factures et voit le registre ; l’agent fait seulement les factures.':'Aucun compte pour le moment : l’application s’ouvre sans code. Créez d’abord le compte administrateur (le vôtre).'}</p>
   ${L.length?`<div class="scroll"><table><thead><tr><th>Nom complet</th><th>Identifiant</th><th>Adresse e-mail</th><th>Rôle</th><th></th></tr></thead><tbody>${L.map(c=>`<tr><td><b>${h(c.nom)}</b>${moi(c)?' <span class="muted">(vous)</span>':''}</td><td>${h(idCompte(c))}</td><td>${h(c.email||'—')}</td><td>${ROLES[c.role]||ROLES.employe}</td><td>${superProtege(c)?'<span class="tag conv">Protégé</span>':`<div class="btns">${isAdmin()?`<button class="btn sm pri" onclick="modifCompte('${c.id}')">Modifier</button>`:''}<button class="btn sm" onclick="changerPin('${c.id}')">Changer le mot de passe</button><button class="btn sm" onclick="changerEmail('${c.id}')">E-mail</button>${moi(c)?'':`<button class="btn sm danger" onclick="supprCompte('${c.id}')">Supprimer</button>`}</div>`}</td></tr>`).join('')}</tbody></table></div>`:''}
   ${L.length&&!estCreateur()?`<p class="errs" style="margin:1rem 0 0"><b>Création de comptes réservée au créateur du logiciel</b>Seul ${CREATEUR.nom} (compte « Administrateur spécial ») peut créer un compte ou valider une inscription. Contact : ${createurLiens()}</p>
   <div class="btns" style="margin-top:.8rem">${USER?'<button class="btn" onclick="deconnexion()">Se déconnecter</button>':''}</div></div>`:`
   <h3 style="margin:1rem 0 .4rem">${L.length?'Créer un nouveau compte (administrateur, agent ou employé)':'Créer le compte administrateur'}</h3>
   <div class="row"><label class="f">Nom complet<input id="ac_n" placeholder="Ex. : Ali Said Abdallah"></label><label class="f" style="max-width:260px">Adresse e-mail<input id="ac_e" type="email" placeholder="obligatoire pour un administrateur"></label><label class="f" style="max-width:200px">Identifiant<input id="ac_l" placeholder="Ex. : ali" autocapitalize="none" spellcheck="false"></label>
-    ${L.length?`<label class="f" style="max-width:320px">Rôle<select id="ac_r"><option value="agent">Agent (factures seulement)</option><option value="chef">Chef de service (factures, journal des saisies, registre)</option><option value="pdg">PDG (ses propres transactions seulement)</option></select></label>`:''}
+    ${L.length?`<label class="f" style="max-width:320px">Rôle<select id="ac_r"><option value="agent">Agent (factures seulement)</option><option value="chef">Chef de service (factures et registre)</option><option value="pdg">PDG (ses propres transactions seulement)</option></select></label>`:''}
     <label class="f" style="max-width:180px">Mot de passe (4 à 20 caractères)<input id="ac_p" type="password" autocomplete="new-password"></label>
     <label class="f" style="max-width:180px">Confirmer le mot de passe<input id="ac_p2" type="password" autocomplete="new-password"></label></div>
   <div class="btns" style="margin-top:.8rem"><button class="btn pri" onclick="ajouterCompte()">Créer le compte</button>${USER?'<button class="btn" onclick="deconnexion()">Se déconnecter</button>':''}</div>
@@ -5105,7 +5107,7 @@ function modifCompte(id){
   if(!isAdmin()){ toast('Seul l’administrateur peut modifier un compte'); return; }
   if(superProtege(c)){ toast('Ce compte est protégé'); return; }
   const fixe=c.role==='super'||c.role==='admin';
-  const R=[['agent','Agent (factures seulement)'],['chef','Chef de service (factures, journal des saisies, registre)'],['pdg','PDG (ses propres transactions seulement)']];
+  const R=[['agent','Agent (factures seulement)'],['chef','Chef de service (factures et registre)'],['pdg','PDG (ses propres transactions seulement)']];
   document.querySelectorAll('.modal').forEach(m=>m.remove());
   modalPdg(`<div class="head" style="margin-bottom:.6rem"><h2 style="margin:0">Modifier le compte de ${h(c.nom)}</h2><button class="btn" onclick="this.closest('.modal').remove()">Fermer</button></div>
     <div class="row"><label class="f">Nom complet<input id="mc_n" value="${h(c.nom)}"></label><label class="f">Identifiant (pour se connecter)<input id="mc_l" value="${h(idCompte(c))}" autocapitalize="none" spellcheck="false"></label></div>

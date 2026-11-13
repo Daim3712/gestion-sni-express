@@ -367,7 +367,7 @@ const IC = {
 const NAV = [['menu','Menu principal','menu'],['home','Accueil','home'],['facture','Facture','fac'],['registre','Registre','reg'],['journal','Journal des saisies','reg'],['charges','Charges','chg'],['employes','Employés','emp'],['paie','Paie','pay'],['pdg','PDG','pdg'],['compte','Compte SNI','rap'],['tracto','Tractopelle','trc'],['wusu','Wusukani Wamasiwa','wus'],['param','Paramètres','par']];
 const svg = k => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${IC[k]}</svg>`;
 let view = 'menu';
-const VERSION_APP='2.0.116';
+const VERSION_APP='2.0.117';
 /* Créateur du logiciel : coordonnées fixes, intégrées au code (identiques dans chaque installation, non modifiables) */
 const CREATEUR={nom:'ALI DAÏM',email:'daim3575@gmail.com',tels:['+269 323 05 70','+269 432 29 14']};
 const waLien=t=>'https://wa.me/'+t.replace(/\D/g,'');
@@ -4109,7 +4109,52 @@ function wuCompteHTML(p){
    Débit = charges fixes, charges variables, salaires, emprunts du PDG (partie SNI). Solde = crédit − débit. */
 let scP=ymNow();
 /* Page « Compte SNI » : toutes les transactions de SNI du mois (factures payées, charges, salaires, PDG partie SNI) */
-function vCompteSni(m){ m.innerHTML=`<div class="head"><div><h1>Compte SNI</h1><p>Toutes les transactions de SNI du mois : factures payées, charges fixes et variables, salaires, emprunts et remboursements du PDG (caisse SNI)</p></div></div>${sniCompteCard()}`; }
+function vCompteSni(m){ m.innerHTML=`<div class="head"><div><h1>Compte SNI</h1><p>Toutes les transactions de SNI du mois : factures payées, charges fixes et variables, salaires, emprunts et remboursements du PDG (caisse SNI)</p></div></div>${sniJournalCard()}${sniCompteCard()}`; }
+/* Journal du mois (Compte SNI) : factures (définitives et proformas), charges fixes et charges variables,
+   présentés en N° de facture, Date et heure, Client, Qté, Prix unitaire, Montant ; totaux en bas */
+function sniJournal(p){
+  const fs=FAC.filter(f=>ym(f.date)===p).sort((a,b)=>String(a.date).localeCompare(String(b.date)));
+  const cs=CHG.filter(c=>ym(c.date)===p&&!salAilleurs(c)).sort((a,b)=>String(a.date).localeCompare(String(b.date)));
+  const fac=fs.map(f=>{ const t=calc(f), li=lignesFacture(f); return {f,t,li,paid:f.type==='D',etat:f.type==='D'?'Payée':f.convertie?'Proforma convertie':'Proforma non payée'}; });
+  const F=cs.filter(c=>c.type!=='variable'&&c.type!=='salaire'), V=cs.filter(c=>c.type==='variable');
+  const s=a=>a.reduce((x,c)=>x+n0(c.montant),0), D=fac.filter(x=>x.paid), Pn=fac.filter(x=>!x.paid&&!x.f.convertie);
+  return {fac,F,V,T:{ent:D.reduce((x,v)=>x+v.t.ttc,0),nD:D.length,pnp:Pn.reduce((x,v)=>x+v.t.ttc,0),nP:Pn.length,fx:s(F),va:s(V)}};
+}
+const sniChLab=c=>(c.type==='electricite'?'Électricité':c.type==='variable'?(c.cat||'Charge variable'):(c.cat||'Charge fixe'))+(c.des?' – '+c.des:c.note?' – '+c.note:'');
+function sniJournalCard(){
+  const p=scP, J=sniJournal(p), br=a=>a.join('<br>');
+  const thF='<tr><th>N° de facture</th><th>Date et heure</th><th>Client</th><th class="r">Qté</th><th class="r">Prix unitaire</th><th class="r">Montant</th><th>État</th></tr>';
+  const thC='<tr><th>N°</th><th>Date et heure</th><th>Fournisseur / désignation</th><th class="r">Qté</th><th class="r">Prix unitaire</th><th class="r">Montant</th></tr>';
+  const rC=L=>L.map(c=>`<tr><td>${h(c.num||'—')}</td><td>${dt(c.date)}</td><td>${c.four?'<b>'+h(c.four)+'</b><br>':''}<small>${h(sniChLab(c))}</small></td><td class="r num">${c.qte?fmt(c.qte):'—'}</td><td class="r num">${c.pu?money(c.pu):'—'}</td><td class="r num"><b>${money(c.montant)}</b></td></tr>`).join('');
+  const sect=(tit,L,tot)=>`<h3 style="margin:1rem 0 .4rem">${tit} (${L.length})</h3>${L.length?`<div class="scroll"><table>${thC}<tbody>${rC(L)}<tr style="font-weight:700"><td colspan="5">Total ${tit.toLowerCase()}</td><td class="r num">${money(tot)}</td></tr></tbody></table></div>`:'<p class="muted" style="margin:0">Aucune.</p>'}`;
+  return `<div class="card"><div class="head" style="margin-bottom:.4rem"><div><h2 style="margin:0">Journal des factures et des charges – ${h(moisTxt(p))}</h2>
+    <p class="muted" style="margin:.2rem 0 0">Chaque facture saisie (définitive ou proforma), chaque charge fixe et chaque charge variable du mois choisi</p></div>
+    <div class="btns"><button class="btn pri" onclick="ouvrirRecu('Journal des factures et charges – '+moisTxt(scP),sniJournalHTML(scP),'journal-sni-'+scP+'.pdf')">Aperçu</button><button class="btn" onclick="printHTML(sniJournalHTML(scP))">Imprimer</button><button class="btn" onclick="exportPDF(sniJournalHTML(scP),'journal-sni-'+scP+'.pdf')">PDF</button></div></div>
+    <div class="row" style="margin-bottom:.4rem">${choixMoisAn('sjm',scP,'scP=v||scP;render()')}</div>
+    <h3 style="margin:.6rem 0 .4rem">Factures (${J.fac.length})</h3>
+    ${J.fac.length?`<div class="scroll"><table>${thF}<tbody>${J.fac.map(x=>`<tr><td><b>${h(x.f.num)}</b></td><td>${dt(x.f.date)}</td><td><b>${h(x.f.client||'—')}</b>${x.f.objet?'<br><small class="muted">'+h(x.f.objet)+'</small>':''}</td>
+      <td class="r num">${br(x.li.map(qteTxt))}</td><td class="r num">${br(x.li.map(l=>money(l.pu)))}</td><td class="r num">${br(x.li.map(l=>money(n0(l.qte)*n0(l.pu)-n0(l.remise))))}${x.li.length>1||x.t.ttc!==x.li.reduce((s,l)=>s+n0(l.qte)*n0(l.pu)-n0(l.remise),0)?'<br><b>Total TTC : '+money(x.t.ttc)+'</b>':''}</td>
+      <td>${x.paid?'<span class="tag paid">Payée</span>':x.f.convertie?'<span class="tag">Convertie</span>':'<span class="tag unpaid">Proforma non payée</span>'}</td></tr>`).join('')}</tbody></table></div>`:'<p class="muted" style="margin:0">Aucune facture ce mois.</p>'}
+    ${sect('Charges fixes',J.F,J.T.fx)}${sect('Charges variables',J.V,J.T.va)}
+    <div class="kpis" style="margin-top:1rem"><div class="kpi paid"><small>Total des entrées de factures (payées – ${J.T.nD})</small><b class="num">${money(J.T.ent)}</b></div>
+      <div class="kpi unpaid"><small>Factures proforma non payées (${J.T.nP})</small><b class="num">${money(J.T.pnp)}</b></div>
+      <div class="kpi amber"><small>Total charges fixes</small><b class="num">${money(J.T.fx)}</b></div><div class="kpi amber"><small>Total charges variables</small><b class="num">${money(J.T.va)}</b></div></div></div>`;
+}
+function sniJournalHTML(p){
+  const J=sniJournal(p), B='#1F4E79', br=a=>a.join('<br>');
+  const c='style="padding:5px 4px;border:1px solid #333;font-size:10px;vertical-align:top"', r='style="padding:5px 4px;border:1px solid #333;font-size:10px;text-align:right;white-space:nowrap;vertical-align:top"', th=`style="padding:6px 4px;border:1px solid #333;font-size:10px;background:${B};color:#fff;text-align:left"`;
+  const tl=(l,v)=>`<tr><td style="padding:6px;border:1px solid #333;font-size:11px;width:68%">${l}</td><td style="padding:6px;border:1px solid #333;font-size:11px;text-align:right">${v}</td></tr>`;
+  const tabC=(tit,L,tot)=>`<div style="font-size:13px;font-weight:700;color:${B};margin:12px 0 4px">${tit}</div><table style="border-collapse:collapse;width:100%"><thead><tr>${['N°','Date et heure','Fournisseur / désignation','Qté','Prix unitaire','Montant'].map(x=>`<th ${th}>${x}</th>`).join('')}</tr></thead><tbody>
+    ${L.map(x=>`<tr><td ${c}>${h(x.num||'—')}</td><td ${c}>${dt(x.date)}</td><td ${c}>${x.four?h(x.four)+' – ':''}${h(sniChLab(x))}</td><td ${r}>${x.qte?fmt(x.qte):''}</td><td ${r}>${x.pu?fmt(x.pu):''}</td><td ${r}>${fmt(x.montant)}</td></tr>`).join('')||`<tr><td ${c} colspan="6">Aucune</td></tr>`}
+    <tr style="font-weight:700;background:#E8EEF5"><td ${c} colspan="5">Total ${tit.toLowerCase()}</td><td ${r}>${fmt(tot)}</td></tr></tbody></table>`;
+  return `${PAYSAGE}<div class="sheet paysage">${entete('JOURNAL DES FACTURES ET DES CHARGES – SNI',moisTxt(p),new Date().toISOString())}
+    <div style="font-size:13px;font-weight:700;color:${B};margin:12px 0 4px">Factures</div>
+    <table style="border-collapse:collapse;width:100%"><thead><tr>${['N° de facture','Date et heure','Client','Qté','Prix unitaire','Montant','État'].map(x=>`<th ${th}>${x}</th>`).join('')}</tr></thead><tbody>
+    ${J.fac.map(x=>`<tr><td ${c}><b>${h(x.f.num)}</b></td><td ${c}>${dt(x.f.date)}</td><td ${c}>${h(x.f.client||'—')}</td><td ${r}>${br(x.li.map(qteTxt))}</td><td ${r}>${br(x.li.map(l=>fmt(n0(l.pu))))}</td><td ${r}>${br(x.li.map(l=>fmt(n0(l.qte)*n0(l.pu)-n0(l.remise))))}${x.li.length>1?'<br><b>'+fmt(x.t.ttc)+'</b>':''}</td><td ${c}>${x.etat}</td></tr>`).join('')||`<tr><td ${c} colspan="7">Aucune facture</td></tr>`}</tbody></table>
+    ${tabC('Charges fixes',J.F,J.T.fx)}${tabC('Charges variables',J.V,J.T.va)}
+    <table style="border-collapse:collapse;width:100%;margin-top:12px">${tl('<b>Total des entrées de factures (payées – '+J.T.nD+')</b>','<b>'+money(J.T.ent)+'</b>')}${tl('<b>Factures proforma non payées ('+J.T.nP+')</b>','<b>'+money(J.T.pnp)+'</b>')}${tl('Total charges fixes',money(J.T.fx))}${tl('Total charges variables',money(J.T.va))}</table>
+    <div class="foot">${signes()}</div></div>`;
+}
 const SC_COLS=['Date / heure','N°','Client','Désignation','Déjeuner','Qté','P-U','Montant','Débit (dépenses)','Crédit (encaissé)','Solde (crédit − débit)','Reçu'];
 const estDej=c=>/d[ée]jeuner|repas/i.test([c.cat,c.des,c.note].join(' '));
 function sniLignes(p){

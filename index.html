@@ -367,7 +367,7 @@ const IC = {
 const NAV = [['menu','Menu principal','menu'],['home','Accueil','home'],['facture','Facture','fac'],['registre','Registre','reg'],['journal','Journal des saisies','reg'],['charges','Charges','chg'],['employes','Employés','emp'],['paie','Paie','pay'],['pdg','PDG','pdg'],['compte','Compte SNI','rap'],['tracto','Tractopelle','trc'],['wusu','Wusukani Wamasiwa','wus'],['param','Paramètres','par']];
 const svg = k => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${IC[k]}</svg>`;
 let view = 'menu';
-const VERSION_APP='2.0.109';
+const VERSION_APP='2.0.110';
 /* Créateur du logiciel : coordonnées fixes, intégrées au code (identiques dans chaque installation, non modifiables) */
 const CREATEUR={nom:'ALI DAÏM',email:'daim3575@gmail.com',tels:['+269 323 05 70','+269 432 29 14']};
 const waLien=t=>'https://wa.me/'+t.replace(/\D/g,'');
@@ -2136,13 +2136,20 @@ const nomsChauf=()=>CHAUFS().map(c=>c.nom);
 const tauxDe=nom=>{ const c=CHAUFS().find(x=>x.nom===nom); return n0(c&&c.taux)||n0(TR().taux); };
 const MECAS=()=>Array.isArray(TR().mecas)?TR().mecas:[];
 /* Paie du chauffeur pour un travail = heures travaillées × son taux (gardé sur le travail) : charge fixe automatique */
-const trPaieCh=x=>Math.round(n0(x.heures)*(x.taux!=null?n0(x.taux):tauxDe(x.chauffeur)));
+const trPaieBrut=x=>Math.round(n0(x.heures)*(x.taux!=null?n0(x.taux):tauxDe(x.chauffeur)));
+/* Montant du mois changé à la main (journal de paie) : les heures restent, le montant du mois est réparti sur ses travaux */
+const trDuId=(ch,mo)=>'paiedu-'+mo+'-'+String(ch).toLowerCase().replace(/[^a-z0-9]+/g,'-');
+const trDuMod=(ch,mo)=>TRC.find(p=>p.kind==='paiedu'&&p.id===trDuId(ch,mo));
+const trPaieCh=x=>{ const b=trPaieBrut(x), mo=locD(x.date).slice(0,7), m=trDuMod(x.chauffeur,mo); if(!m) return b;
+  const L=trTravaux().filter(t=>t.chauffeur===x.chauffeur&&locD(t.date).slice(0,7)===mo).sort((a,c)=>a.date.localeCompare(c.date)||String(a.id).localeCompare(String(c.id)));
+  const M=n0(m.montant), tb=L.reduce((s,t)=>s+trPaieBrut(t),0), P=L.map(t=>tb>0?Math.floor(M*trPaieBrut(t)/tb):Math.floor(M/L.length));
+  const i=L.findIndex(t=>t.id===x.id); if(i<0) return b; return P[i]+(i===L.length-1?M-P.reduce((s,v)=>s+v,0):0); };
 /* Débit d'un travail = paie du chauffeur + charges et mécanicien rattachés à ce travail */
 const trLies=x=>[...trCharges(),...trMecas()].filter(c=>c.travail===x.id);
 function trDebitDet(x){ const L=trLies(x), s=f=>L.filter(f).reduce((a,c)=>a+n0(c.montant),0);
   return {ch:trPaieCh(x),fx:s(c=>c.kind==='charge'&&c.type==='fixe'),va:s(c=>c.kind==='charge'&&c.type!=='fixe'),me:s(c=>c.kind==='meca')}; }
 /* Le salaire du mois de ce chauffeur a-t-il été marqué payé (bulletin) ? */
-const trChPaye=x=>{ const mo=locD(x.date).slice(0,7), p=TRC.find(q=>q.kind==='paie'&&q.id===trPaieId(x.chauffeur,mo)); if(!p) return false;
+const trChPaye=x=>{ const mo=locD(x.date).slice(0,7), p=TRC.find(q=>q.kind==='paie'&&q.id===trPaieId(x.chauffeur,mo)); if(!p) return !!trDuMod(x.chauffeur,mo)&&n0(trDuMod(x.chauffeur,mo).montant)<=0;
   const du=trTravaux().filter(t=>t.chauffeur===x.chauffeur&&locD(t.date).slice(0,7)===mo).reduce((s,t)=>s+trPaieCh(t),0); return trPayeDe(p)>=du; };
 const trDebit=x=>{ const d=trDebitDet(x); return d.ch+d.fx+d.va+d.me; };
 const detDebit=d=>[d.ch?'Chauffeur '+fmt(d.ch):'',d.fx?'Fixes '+fmt(d.fx):'',d.va?'Variables '+fmt(d.va):'',d.me?'Mécanicien '+fmt(d.me):'',d.pdg?'Emprunt du PDG '+fmt(d.pdg):''].filter(Boolean).join(' · ');
@@ -2701,16 +2708,17 @@ function trJpLignes(){
   chs.forEach(ch=>{
     const mois=[...new Set([...T.filter(x=>x.chauffeur===ch).map(x=>locD(x.date).slice(0,7)),...TRC.filter(p=>p.kind==='paie'&&p.chauffeur===ch).map(p=>p.mois)])];
     mois.forEach(mo=>{
-      const L=T.filter(x=>x.chauffeur===ch&&locD(x.date).slice(0,7)===mo), du=L.reduce((s,x)=>s+trPaieCh(x),0), hh=L.reduce((s,x)=>s+n0(x.heures),0);
+      const L=T.filter(x=>x.chauffeur===ch&&locD(x.date).slice(0,7)===mo), du=L.reduce((s,x)=>s+trPaieCh(x),0), hh=L.reduce((s,x)=>s+n0(x.heures),0), brut=L.reduce((s,x)=>s+trPaieBrut(x),0), mod=trDuMod(ch,mo);
       const p=TRC.find(x=>x.id===trPaieId(ch,mo)), pa=trPayeDe(p), reste=Math.max(0,du-pa);
-      if(!du&&!p) return;
-      R.push({ch,mo,n:L.length,hh,du,p,pa,reste,st:p&&reste<=0?'p':p?'pp':'np'});
+      if(!du&&!p&&!mod&&!L.length) return;
+      R.push({ch,mo,n:L.length,hh,du,brut,mod,p,pa,reste,st:du<=0&&!pa?'z':p&&reste<=0?'p':p?'pp':'np'});
     });
   });
   return R.sort((a,b)=>b.mo.localeCompare(a.mo)||a.ch.localeCompare(b.ch));
 }
-const trJpTag=r=>r.st==='p'?'<span class="tag paid">Payé</span>':r.st==='pp'?'<span class="tag unpaid">Payé en partie</span>':'<span class="tag unpaid">Non payé</span>';
-function trJpFiltre(){ return trJpLignes().filter(r=>(!trJpCh||r.ch===trJpCh)&&(!trJpS||(trJpS==='np'?r.st!=='p':r.st==='p'))); }
+const trJpTag=r=>r.st==='z'?'<span class="tag">Montant 0 – rien à payer</span>':r.st==='p'?'<span class="tag paid">Payé</span>':r.st==='pp'?'<span class="tag unpaid">Payé en partie</span>':'<span class="tag unpaid">Non payé</span>';
+const trJpEtat=r=>r.st==='z'?'Montant 0':r.st==='p'?'Payé':r.st==='pp'?'Payé en partie':'Non payé';
+function trJpFiltre(){ return trJpLignes().filter(r=>(!trJpCh||r.ch===trJpCh)&&(!trJpS||(trJpS==='np'?(r.st==='np'||r.st==='pp'):(r.st==='p'||r.st==='z')))); }
 function trJournalPaieCard(){
   const A=trJpLignes(), L=trJpFiltre(), chs=[...new Set(A.map(r=>r.ch))];
   const tD=L.reduce((s,r)=>s+r.du,0), tP=L.reduce((s,r)=>s+r.pa,0), tR=L.reduce((s,r)=>s+r.reste,0);
@@ -2720,8 +2728,8 @@ function trJournalPaieCard(){
       <label class="f" style="flex:0 0 auto">Afficher<select style="width:auto" onchange="trJpS=this.value;render()"><option value="">Tout</option><option value="np" ${trJpS==='np'?'selected':''}>Non payés seulement</option><option value="p" ${trJpS==='p'?'selected':''}>Payés seulement</option></select></label></div>
     <div class="kpis" style="margin:.4rem 0 .8rem"><div class="kpi amber"><small>Total dû</small><b class="num">${money(tD)}</b></div><div class="kpi paid"><small>Total payé</small><b class="num">${money(tP)}</b></div><div class="kpi unpaid"><small>Reste à payer</small><b class="num">${money(tR)}</b></div></div>
     ${L.length?`<div class="tw"><table><thead><tr><th>Mois</th><th>Chauffeur</th><th>Travaux</th><th>Heures</th><th>Dû</th><th>Payé</th><th>Reste</th><th>Date du paiement</th><th>État</th><th></th></tr></thead><tbody>
-    ${L.map(r=>`<tr><td>${moisTxt(r.mo)}</td><td>${h(r.ch)}</td><td class="num">${r.n}</td><td class="num">${fmtH(r.hh)}</td><td class="num">${money(r.du)}</td><td class="num">${money(r.pa)}</td><td class="num"><b>${money(r.reste)}</b></td><td>${r.p?dOnly(r.p.date):'—'}${r.p&&r.p.note?'<br><small class="muted">'+h(r.p.note)+'</small>':''}</td><td>${trJpTag(r)}</td>
-      <td><div class="btns" style="flex-wrap:nowrap"><button class="btn sm" onclick="trJpBulletin('${encodeURIComponent(r.ch)}','${r.mo}')">Bulletin</button>${r.st!=='p'&&r.du?`<button class="btn sm pri" onclick="trJpPayer('${encodeURIComponent(r.ch)}','${r.mo}')">Payer</button>`:''}<button class="btn sm" onclick="trJpModif('${encodeURIComponent(r.ch)}','${r.mo}')">Modifier</button></div></td></tr>`).join('')}
+    ${L.map(r=>`<tr><td>${moisTxt(r.mo)}</td><td>${h(r.ch)}</td><td class="num">${r.n}</td><td class="num">${fmtH(r.hh)}</td><td class="num">${money(r.du)}${r.mod?'<br><small class="muted">modifié (calcul : '+money(r.brut)+')</small>':''}</td><td class="num">${money(r.pa)}</td><td class="num"><b>${money(r.reste)}</b></td><td>${r.p?dOnly(r.p.date):'—'}${r.p&&r.p.note?'<br><small class="muted">'+h(r.p.note)+'</small>':''}</td><td>${trJpTag(r)}</td>
+      <td><div class="btns" style="flex-wrap:nowrap"><button class="btn sm" onclick="trJpBulletin('${encodeURIComponent(r.ch)}','${r.mo}')">Bulletin</button>${(r.st==='np'||r.st==='pp')&&r.du?`<button class="btn sm pri" onclick="trJpPayer('${encodeURIComponent(r.ch)}','${r.mo}')">Payer</button>`:''}<button class="btn sm" onclick="trJpModif('${encodeURIComponent(r.ch)}','${r.mo}')">Modifier</button></div></td></tr>`).join('')}
     <tr style="font-weight:700"><td colspan="4">Total</td><td class="num">${money(tD)}</td><td class="num">${money(tP)}</td><td class="num">${money(tR)}</td><td colspan="3"></td></tr></tbody></table></div>`:`<div class="empty">${trJpS==='np'?'Aucun salaire impayé : tout est payé.':'Aucune paie de chauffeur pour le moment.'}</div>`}</div>`;
 }
 function trJpBulletin(ch,mo){ trBul.ch=decodeURIComponent(ch); trBul.mois=mo; render(); trVoirBulletin(); }
@@ -2731,21 +2739,27 @@ function trJpModif(ch,mo){
   document.querySelectorAll('.modal').forEach(m=>m.remove());
   const d=r.p?locD(r.p.date):new Date().toISOString().slice(0,10);
   const md=modalPdg(`<div class="head" style="margin-bottom:.6rem"><h2 style="margin:0">Modifier la paie – ${h(ch)} – ${moisTxt(mo)}</h2><button class="btn" onclick="this.closest('.modal').remove()">Fermer</button></div>
-    <p>Dû pour ce mois : <b>${money(r.du)}</b> (${r.n} travail(aux), ${fmtH(r.hh)})</p>
-    <div class="row"><label class="f">Montant payé (KMF)<input id="jp_m" type="number" inputmode="numeric" min="0" value="${r.p?r.pa:r.du}"></label><label class="f">Date du paiement<input id="jp_d" type="date" value="${d}"></label></div>
-    <label class="f" style="margin-top:.6rem">Note (facultatif)<input id="jp_n" value="${h(r.p&&r.p.note||'')}" placeholder="ex. payé en espèces, avance…"></label>
-    <p class="muted">Mettre 0 ou « Marquer non payé » pour remettre ce mois en non payé.</p>
+    <p>Heures du mois (automatiques, elles ne changent pas) : <b>${fmtH(r.hh)}</b> – ${r.n} travail(aux)<br>Calcul automatique : ${fmtH(r.hh)} × ${money(tauxDe(ch))} = <b>${money(r.brut)}</b></p>
+    <div class="row"><label class="f">Montant du salaire de ce mois (KMF)<input id="jp_du" type="number" inputmode="numeric" min="0" value="${r.du}"></label>
+      <label class="f">Montant payé (KMF)<input id="jp_m" type="number" inputmode="numeric" min="0" value="${r.p?r.pa:0}"></label><label class="f">Date du paiement<input id="jp_d" type="date" value="${d}"></label></div>
+    ${r.mod?`<button class="btn sm" style="margin-top:.4rem" onclick="document.getElementById('jp_du').value='${r.brut}'">Revenir au calcul automatique (${money(r.brut)})</button>`:''}
+    <label class="f" style="margin-top:.6rem">Note (facultatif)<input id="jp_n" value="${h(r.p&&r.p.note||(r.mod&&r.mod.note)||'')}" placeholder="ex. payé en espèces, avance…"></label>
+    <p class="muted">Le montant du salaire peut être changé, même à 0 : les heures restent. « Montant payé » à 0 = rien n’est encore payé.</p>
     <div class="btns" style="margin-top:.6rem"><button class="btn pri" onclick="trJpEnreg('${encodeURIComponent(ch)}','${mo}')">Enregistrer</button>${r.p?`<button class="btn" onclick="trJpNonPaye('${encodeURIComponent(ch)}','${mo}')">Marquer non payé</button>`:''}<button class="btn" onclick="this.closest('.modal').remove()">Annuler</button></div>`);
   md.querySelector('.in').style.maxWidth='560px';
 }
 async function trJpEnreg(ch,mo){
   ch=decodeURIComponent(ch); const r=trJpLignes().find(x=>x.ch===ch&&x.mo===mo); if(!r) return;
-  const m=n0(val('jp_m')), d=val('jp_d')||new Date().toISOString().slice(0,10), note=String(val('jp_n')||'').trim();
-  if(m<=0){ return trJpNonPaye(encodeURIComponent(ch),mo); }
+  const m=n0(val('jp_m')), du=Math.max(0,n0(val('jp_du'))), d=val('jp_d')||new Date().toISOString().slice(0,10), note=String(val('jp_n')||'').trim();
+  if(m>du){ toast('Le montant payé dépasse le salaire du mois ('+money(du)+')'); return; }
+  /* montant du salaire du mois : gardé à part s'il diffère du calcul automatique ; les heures ne changent pas */
+  if(du!==r.brut) await put('tracto',{id:trDuId(ch,mo),kind:'paiedu',chauffeur:ch,mois:mo,heures:r.hh,brut:r.brut,montant:du,note,date:new Date().toISOString()});
+  else if(r.mod) await del('tracto',trDuId(ch,mo));
   const id=trPaieId(ch,mo);
-  await put('tracto',Object.assign({},r.p||{},{id,kind:'paie',chauffeur:ch,mois:mo,heures:r.hh,taux:tauxDe(ch),montant:r.du,paye:m,note,date:new Date(d+'T12:00:00').toISOString()}));
-  journal('Tractopelle : paie du chauffeur modifiée '+ch+' '+mo+' – payé '+money(m)+' sur '+money(r.du));
-  document.querySelectorAll('.modal').forEach(x=>x.remove()); toast(m>=r.du?'Paie enregistrée : payé':'Paie enregistrée : reste '+money(r.du-m)); render();
+  if(m>0) await put('tracto',Object.assign({},r.p||{},{id,kind:'paie',chauffeur:ch,mois:mo,heures:r.hh,taux:tauxDe(ch),montant:du,paye:m,note,date:new Date(d+'T12:00:00').toISOString()}));
+  else if(r.p) await del('tracto',id);
+  journal('Tractopelle : paie du chauffeur modifiée '+ch+' '+mo+' – salaire '+money(du)+(du!==r.brut?' (calcul '+money(r.brut)+')':'')+', payé '+money(m)+', heures '+fmtH(r.hh));
+  document.querySelectorAll('.modal').forEach(x=>x.remove()); toast(du<=0?'Enregistré : montant 0, les heures restent':m<=0?'Enregistré : rien payé, reste '+money(du):m>=du?'Paie enregistrée : payé':'Paie enregistrée : reste '+money(du-m)); render();
 }
 async function trJpNonPaye(ch,mo){
   ch=decodeURIComponent(ch); if(!confirm('Remettre en « Non payé » le salaire de '+ch+' ('+moisTxt(mo)+') ?')) return;
@@ -2759,7 +2773,7 @@ function trJpHTML(){
   return `${PAYSAGE}<div class="sheet paysage">${entete('JOURNAL DE PAIE DES CHAUFFEURS – TRACTOPELLE','JP',new Date().toISOString())}
     <p style="font-weight:700">${trJpCh?'Chauffeur : '+h(trJpCh):'Tous les chauffeurs'}${trJpS==='np'?' – non payés seulement':trJpS==='p'?' – payés seulement':''}</p>
     <table style="border-collapse:collapse;width:100%;margin:10px 0"><thead><tr>${['Mois','Chauffeur','Travaux','Heures','Dû','Payé','Reste','Date du paiement','État'].map(t=>`<th style="padding:5px;border:1px solid #9CC9D6;font-size:10.5px;background:#4BACC6;color:#1F3864">${t}</th>`).join('')}</tr></thead><tbody>
-    ${L.map(x=>`<tr><td ${c}>${moisTxt(x.mo)}</td><td ${c}>${h(x.ch)}</td><td ${r}>${x.n}</td><td ${r}>${fmtH(x.hh)}</td><td ${r}>${money(x.du)}</td><td ${r}>${money(x.pa)}</td><td ${r}>${money(x.reste)}</td><td ${c}>${x.p?dOnly(x.p.date):'—'}</td><td ${c}>${x.st==='p'?'Payé':x.st==='pp'?'Payé en partie':'Non payé'}</td></tr>`).join('')||`<tr><td ${c} colspan="9">Aucune ligne</td></tr>`}
+    ${L.map(x=>`<tr><td ${c}>${moisTxt(x.mo)}</td><td ${c}>${h(x.ch)}</td><td ${r}>${x.n}</td><td ${r}>${fmtH(x.hh)}</td><td ${r}>${money(x.du)}</td><td ${r}>${money(x.pa)}</td><td ${r}>${money(x.reste)}</td><td ${c}>${x.p?dOnly(x.p.date):'—'}</td><td ${c}>${trJpEtat(x)}</td></tr>`).join('')||`<tr><td ${c} colspan="9">Aucune ligne</td></tr>`}
     <tr style="font-weight:700;background:#F3DADA"><td ${c} colspan="4">Total</td><td ${r}>${money(tD)}</td><td ${r}>${money(tP)}</td><td ${r}>${money(tR)}</td><td ${c} colspan="2"></td></tr></tbody></table>
     <div class="tt"><div><span>Total dû</span><span>${money(tD)}</span></div><div><span>Total payé</span><span>${money(tP)}</span></div><div class="g"><span>Reste à payer</span><span>${money(tR)}</span></div></div>
     <div class="bottom">${h(S.nom)} – ${h(S.adresse)}</div></div>`;

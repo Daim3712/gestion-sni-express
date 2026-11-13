@@ -367,7 +367,7 @@ const IC = {
 const NAV = [['menu','Menu principal','menu'],['home','Accueil','home'],['facture','Facture','fac'],['registre','Registre','reg'],['journal','Journal des saisies','reg'],['charges','Charges','chg'],['employes','Employés','emp'],['paie','Paie','pay'],['pdg','PDG','pdg'],['compte','Compte SNI','rap'],['tracto','Tractopelle','trc'],['wusu','Wusukani Wamasiwa','wus'],['param','Paramètres','par']];
 const svg = k => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${IC[k]}</svg>`;
 let view = 'menu';
-const VERSION_APP='2.0.110';
+const VERSION_APP='2.0.112';
 /* Créateur du logiciel : coordonnées fixes, intégrées au code (identiques dans chaque installation, non modifiables) */
 const CREATEUR={nom:'ALI DAÏM',email:'daim3575@gmail.com',tels:['+269 323 05 70','+269 432 29 14']};
 const waLien=t=>'https://wa.me/'+t.replace(/\D/g,'');
@@ -2275,11 +2275,12 @@ async function trEnregModif(id){
   const x=TRC.find(t=>t.id===id); if(!x) return;
   const d=val('tm_d')||locD(x.date).slice(0,10), e=val('tm_e'), s=val('tm_s'), pu=n0(val('tm_pu')), client=String(val('tm_cl')||'').trim();
   const dj=val('tm_dj'), hh=e&&s?Math.max(0,heuresEntre(e,s,dj)):0; /* cases facultatives, comme à l'ajout */
-  const mt=Math.round(hh*pu); let P=[...(x.paiements||[])];
+  /* montant changé à la main sur la facture : gardé tant que les heures et le prix ne changent pas */
+  const fixe=x.montantFixe&&Math.abs(hh-n0(x.heures))<1e-6&&pu===n0(x.prix), mt=fixe?n0(x.montant):Math.round(hh*pu); let P=[...(x.paiements||[])];
   /* jamais plus payé que le nouveau prix : on réduit d'abord les derniers paiements */
   let trop=mt>0?P.reduce((a,p)=>a+n0(p.montant),0)-mt:0; /* prix encore à 0 : on garde l'avance */ for(let i=P.length-1;i>=0&&trop>0;i--){ const k=Math.min(n0(P[i].montant),trop); P[i]={...P[i],montant:n0(P[i].montant)-k}; trop-=k; } P=P.filter(p=>n0(p.montant)>0);
   if(val('tm_pay')==='paye'){ const reste=mt-P.reduce((a,p)=>a+n0(p.montant),0); if(reste>0) P.push({id:uid(),num:nextTr('TPP',d),date:new Date().toISOString(),montant:reste,moyen:val('tm_m')||'Espèces',comptant:true}); }
-  const nx={...x,date:new Date(d+'T'+(e?hms(e):(new Date(x.date).toTimeString().slice(0,8)||'12:00:00'))).toISOString(),client:client||'Client non indiqué',tel:String(val('tm_tel')||'').trim(),lieu:String(val('tm_lieu')||'').trim(),nature:String(val('tm_nat')||'').trim(),chauffeur:val('tm_ch')||x.chauffeur,taux:(val('tm_ch')||x.chauffeur)===x.chauffeur&&x.taux!=null?x.taux:tauxDe(val('tm_ch')||x.chauffeur),entree:e,sortie:s,dej:secondesDe(dj)?hms(dj):'',heures:hh,prix:pu,montant:mt,paiements:P};
+  const nx={...x,date:new Date(d+'T'+(e?hms(e):(new Date(x.date).toTimeString().slice(0,8)||'12:00:00'))).toISOString(),client:client||'Client non indiqué',tel:String(val('tm_tel')||'').trim(),lieu:String(val('tm_lieu')||'').trim(),nature:String(val('tm_nat')||'').trim(),chauffeur:val('tm_ch')||x.chauffeur,taux:(val('tm_ch')||x.chauffeur)===x.chauffeur&&x.taux!=null?x.taux:tauxDe(val('tm_ch')||x.chauffeur),entree:e,sortie:s,dej:secondesDe(dj)?hms(dj):'',heures:hh,prix:pu,montant:mt,montantFixe:!!fixe,paiements:P};
   await put('tracto',nx); journal('Tractopelle : travail modifié '+x.num+' – '+client+' – '+money(mt));
   document.querySelector('.modal')?.remove(); toast('Travail modifié : '+(trPaye(nx)?'Payé':'reste '+money(trSolde(nx)))); render();
 }
@@ -2661,8 +2662,38 @@ function trFacturesCard(){
     ${L.length?`<div class="btns"><button class="btn" onclick="trFacturesTout('f')">Imprimer les factures</button><button class="btn" onclick="trFacturesTout('f','pdf')">PDF des factures</button><button class="btn" onclick="trFacturesTout('r')">Imprimer les reçus</button><button class="btn" onclick="trFacturesTout('r','pdf')">PDF des reçus</button></div>`:''}</div>
     ${L.length?`<div class="scroll"><table><thead><tr><th>N° facture</th><th>Date</th><th>Client</th><th class="r">Montant</th><th class="r">Payé</th><th class="r">Reste</th><th>Reçus</th><th>Statut</th><th></th></tr></thead><tbody>
     ${L.map(x=>`<tr><td><b>${h(trNumFac(x))}</b></td><td>${dOnly(x.date)}</td><td><b>${h(x.client)}</b>${x.lieu?'<br><small class="muted">'+h(x.lieu)+'</small>':''}</td><td class="r num">${money(x.montant)}</td><td class="r num">${money(trCredit(x))}</td><td class="r num">${money(trSolde(x))}</td><td>${(x.paiements||[]).map(p=>`<button class="btn sm" style="margin:1px" onclick="trRecusPaie('${x.id}','${p.id}')">${h(p.num||'Reçu')}</button>`).join('')||'<small class="muted">aucun paiement</small>'}</td><td>${trTag(x)}</td>
-      <td><div class="btns" style="flex-wrap:nowrap"><button class="btn sm pri" onclick="trFacture('${x.id}')">Facture</button>${trPaye(x)?'':`<button class="btn sm" onclick="trEncaisser('${x.id}')">Encaisser</button>`}</div></td></tr>`).join('')}
+      <td><div class="btns" style="flex-wrap:nowrap"><button class="btn sm pri" onclick="trFacture('${x.id}')">Facture</button><button class="btn sm" onclick="trModifFac('${x.id}')">Modifier facture / reçus</button>${trPaye(x)?'':`<button class="btn sm" onclick="trEncaisser('${x.id}')">Encaisser</button>`}</div></td></tr>`).join('')}
     </tbody></table></div>`:`<div class="empty">${trQ?'Aucun travail ne correspond à la recherche.':'Aucun travail sur cette période.'}</div>`}</div>`;
+}
+/* Modifier la facture et les reçus d'un travail du tractopelle : client, lieu, désignation, date, prix, montant ;
+   chaque reçu (date, montant, moyen) ; la facture et les reçus sont refaits avec les nouvelles valeurs */
+function trModifFac(id){
+  const x=TRC.find(t=>t.id===id); if(!x) return; const P=x.paiements||[];
+  document.querySelectorAll('.modal').forEach(m=>m.remove());
+  const md=modalPdg(`<div class="head" style="margin-bottom:.6rem"><h2 style="margin:0">Modifier la facture ${h(trNumFac(x))} et ses reçus</h2><button class="btn" onclick="this.closest('.modal').remove()">Fermer</button></div>
+    <h3 style="margin:.2rem 0 .4rem">Facture</h3>
+    <div class="row"><label class="f" style="flex:0 0 auto">Date<input id="tf_d" type="date" value="${locD(x.date).slice(0,10)}"></label><label class="f">Client<input id="tf_cl" value="${h(x.client||'')}"></label><label class="f">Téléphone<input id="tf_tel" value="${h(x.tel||'')}"></label></div>
+    <div class="row" style="margin-top:.6rem"><label class="f">Désignation (nature du travail)<input id="tf_nat" list="tr_nats" value="${h(x.nature||'')}">${trNaturesList()}</label><label class="f">Lieu / chantier<input id="tf_lieu" value="${h(x.lieu||'')}"></label></div>
+    <div class="row" style="margin-top:.6rem"><div class="f" style="flex:0 0 auto"><small class="muted">Quantité (heures du bon)</small><b>${fmtHMS(x.heures)}</b></div>
+      <label class="f">Prix unitaire de l’heure (KMF)<input id="tf_pu" type="number" min="0" value="${n0(x.prix)}" oninput="document.getElementById('tf_mt').value=Math.round(${n0(x.heures)}*n0(this.value))"></label>
+      <label class="f">Montant de la facture (KMF)<input id="tf_mt" type="number" min="0" value="${n0(x.montant)}"></label></div>
+    <p class="muted" style="margin:.4rem 0 0">Le montant se calcule tout seul (heures × prix) mais vous pouvez le changer. Les heures se changent avec « Modifier » du travail.</p>
+    <h3 style="margin:1rem 0 .4rem">Reçus (paiements du client)</h3>
+    ${P.length?P.map((q,i)=>`<div class="row" style="margin-top:.4rem;align-items:flex-end"><div class="f" style="flex:0 0 130px"><small class="muted">Reçu</small><b>${h(q.num||'')}</b><br><small class="muted">${q.avance?'Avance':q.comptant?'Payé comptant':'Paiement'}</small></div><label class="f" style="flex:0 0 auto">Date<input id="tfp_d${i}" type="date" value="${locD(q.date).slice(0,10)}"></label><label class="f" style="flex:0 0 150px">Montant (KMF)<input id="tfp_m${i}" type="number" inputmode="numeric" min="0" value="${n0(q.montant)}"></label><label class="f" style="flex:0 0 200px">Moyen<select id="tfp_y${i}">${MODES.slice(0,6).map(o=>`<option ${o===(q.moyen||'Espèces')?'selected':''}>${o}</option>`).join('')}</select></label></div>`).join('')
+      :'<p class="muted" style="margin:0">Aucun reçu : utilisez « Encaisser » pour ajouter un paiement.</p>'}
+    ${P.length?'<p class="muted" style="margin:.5rem 0 0">Mettez un montant à 0 pour retirer un reçu.</p>':''}
+    <div class="btns" style="margin-top:.9rem"><button class="btn pri" onclick="trEnregFac('${x.id}')">Enregistrer et refaire la facture et les reçus</button></div>`);
+  md.querySelector('.in').style.maxWidth='860px';
+}
+async function trEnregFac(id){
+  const x=TRC.find(t=>t.id===id); if(!x) return;
+  const d=val('tf_d')||locD(x.date).slice(0,10), pu=n0(val('tf_pu')), mt=Math.max(0,n0(val('tf_mt'))), client=String(val('tf_cl')||'').trim()||'Client non indiqué';
+  const P=(x.paiements||[]).map((q,i)=>{ const dq=val('tfp_d'+i); return {...q,montant:n0(val('tfp_m'+i)),moyen:val('tfp_y'+i)||q.moyen,date:dq&&dq!==locD(q.date).slice(0,10)?new Date(dq+'T12:00:00').toISOString():q.date}; }).filter(q=>q.montant>0);
+  const tp=P.reduce((s,q)=>s+q.montant,0); if(mt>0&&tp>mt){ toast('Les reçus ('+money(tp)+') dépassent le montant de la facture ('+money(mt)+')'); return; }
+  const date=d!==locD(x.date).slice(0,10)?new Date(d+'T'+(new Date(x.date).toTimeString().slice(0,8)||'12:00:00')).toISOString():x.date;
+  const nx={...x,date,client,tel:String(val('tf_tel')||'').trim(),nature:String(val('tf_nat')||'').trim(),lieu:String(val('tf_lieu')||'').trim(),prix:pu,montant:mt,montantFixe:mt!==Math.round(n0(x.heures)*pu),paiements:P,modifie:new Date().toISOString()};
+  await put('tracto',nx); journal('Tractopelle : facture '+trNumFac(x)+' et reçus modifiés – '+client+' '+money(mt)+', payé '+money(tp));
+  document.querySelectorAll('.modal').forEach(m=>m.remove()); toast('Modifié : facture et reçus refaits ('+(trPaye(nx)?'Payé':'reste '+money(trSolde(nx)))+')'); render(); trFacture(id);
 }
 /* Bulletin de paie du chauffeur, payé à l'heure */
 const trPaieId=(ch,mo)=>'paie-'+mo+'-'+String(ch).toLowerCase().replace(/[^a-z0-9]+/g,'-');
@@ -2711,26 +2742,34 @@ function trJpLignes(){
       const L=T.filter(x=>x.chauffeur===ch&&locD(x.date).slice(0,7)===mo), du=L.reduce((s,x)=>s+trPaieCh(x),0), hh=L.reduce((s,x)=>s+n0(x.heures),0), brut=L.reduce((s,x)=>s+trPaieBrut(x),0), mod=trDuMod(ch,mo);
       const p=TRC.find(x=>x.id===trPaieId(ch,mo)), pa=trPayeDe(p), reste=Math.max(0,du-pa);
       if(!du&&!p&&!mod&&!L.length) return;
-      R.push({ch,mo,n:L.length,hh,du,brut,mod,p,pa,reste,st:du<=0&&!pa?'z':p&&reste<=0?'p':p?'pp':'np'});
+      const jours=[...new Set(L.map(x=>locD(x.date).slice(0,10)))].sort();
+      R.push({ch,mo,an:mo.slice(0,4),jours,n:L.length,hh,du,brut,mod,p,pa,reste,st:du<=0&&!pa?'z':p&&reste<=0?'p':p?'pp':'np'});
     });
   });
   return R.sort((a,b)=>b.mo.localeCompare(a.mo)||a.ch.localeCompare(b.ch));
 }
 const trJpTag=r=>r.st==='z'?'<span class="tag">Montant 0 – rien à payer</span>':r.st==='p'?'<span class="tag paid">Payé</span>':r.st==='pp'?'<span class="tag unpaid">Payé en partie</span>':'<span class="tag unpaid">Non payé</span>';
 const trJpEtat=r=>r.st==='z'?'Montant 0':r.st==='p'?'Payé':r.st==='pp'?'Payé en partie':'Non payé';
-function trJpFiltre(){ return trJpLignes().filter(r=>(!trJpCh||r.ch===trJpCh)&&(!trJpS||(trJpS==='np'?(r.st==='np'||r.st==='pp'):(r.st==='p'||r.st==='z')))); }
+/* Période du journal de paie : tout, une année, un mois ou une date précise (jour de travail) */
+let trJpVue='tout', trJpP='', trJpJ='';
+const trJpPer=r=>trJpVue==='annee'?r.an===(trJpP||ymNow()).slice(0,4):trJpVue==='mois'?r.mo===(trJpP||ymNow()):trJpVue==='jour'?r.jours.includes(trJpJ||auj()):true;
+const trJpPerTxt=()=>trJpVue==='annee'?'Année '+(trJpP||ymNow()).slice(0,4):trJpVue==='mois'?moisTxt(trJpP||ymNow()):trJpVue==='jour'?'Travaux du '+dOnly((trJpJ||auj())+'T12:00:00'):'Toutes les périodes';
+const jjmm=d=>d.slice(8,10)+'/'+d.slice(5,7);
+function trJpFiltre(){ return trJpLignes().filter(r=>trJpPer(r)&&(!trJpCh||r.ch===trJpCh)&&(!trJpS||(trJpS==='np'?(r.st==='np'||r.st==='pp'):(r.st==='p'||r.st==='z')))); }
 function trJournalPaieCard(){
   const A=trJpLignes(), L=trJpFiltre(), chs=[...new Set(A.map(r=>r.ch))];
   const tD=L.reduce((s,r)=>s+r.du,0), tP=L.reduce((s,r)=>s+r.pa,0), tR=L.reduce((s,r)=>s+r.reste,0);
   return `<div class="card"><div class="head" style="margin-bottom:.4rem"><div><h2 style="margin:0">Journal de paie des chauffeurs</h2><p class="muted" style="margin:.2rem 0 0">Chaque mois de chaque chauffeur : ce qui est dû, ce qui est payé et ce qui ne l’est pas encore</p></div>
     <div class="btns"><button class="btn" onclick="trJpVoir()">Aperçu</button><button class="btn" onclick="trJpVoir(1)">Imprimer / PDF</button></div></div>
     <div class="row" style="margin-bottom:.6rem;align-items:flex-end"><label class="f" style="flex:0 0 auto">Chauffeur<select style="width:auto" onchange="trJpCh=this.value;render()"><option value="">Tous</option>${chs.map(c=>`<option ${trJpCh===c?'selected':''}>${h(c)}</option>`).join('')}</select></label>
+      <label class="f" style="flex:0 0 auto">Période<select style="width:auto" onchange="trJpVue=this.value;render()"><option value="tout" ${trJpVue==='tout'?'selected':''}>Tout</option><option value="annee" ${trJpVue==='annee'?'selected':''}>Une année</option><option value="mois" ${trJpVue==='mois'?'selected':''}>Un mois</option><option value="jour" ${trJpVue==='jour'?'selected':''}>Une date</option></select></label>
+      ${trJpVue==='mois'?choixMoisAn('trjpm',trJpP||ymNow(),'trJpP=v||trJpP;render()'):trJpVue==='annee'?`<label class="f" style="flex:0 0 auto">Année<select style="width:auto" onchange="trJpP=this.value+'-01';render()">${[...new Set([ymNow().slice(0,4),...A.map(r=>r.an)])].sort().reverse().map(a=>`<option ${a===(trJpP||ymNow()).slice(0,4)?'selected':''}>${a}</option>`).join('')}</select></label>`:trJpVue==='jour'?`<label class="f" style="flex:0 0 auto">Date<input type="date" value="${trJpJ||auj()}" onchange="trJpJ=this.value;render()"></label>`:''}
       <label class="f" style="flex:0 0 auto">Afficher<select style="width:auto" onchange="trJpS=this.value;render()"><option value="">Tout</option><option value="np" ${trJpS==='np'?'selected':''}>Non payés seulement</option><option value="p" ${trJpS==='p'?'selected':''}>Payés seulement</option></select></label></div>
     <div class="kpis" style="margin:.4rem 0 .8rem"><div class="kpi amber"><small>Total dû</small><b class="num">${money(tD)}</b></div><div class="kpi paid"><small>Total payé</small><b class="num">${money(tP)}</b></div><div class="kpi unpaid"><small>Reste à payer</small><b class="num">${money(tR)}</b></div></div>
-    ${L.length?`<div class="tw"><table><thead><tr><th>Mois</th><th>Chauffeur</th><th>Travaux</th><th>Heures</th><th>Dû</th><th>Payé</th><th>Reste</th><th>Date du paiement</th><th>État</th><th></th></tr></thead><tbody>
-    ${L.map(r=>`<tr><td>${moisTxt(r.mo)}</td><td>${h(r.ch)}</td><td class="num">${r.n}</td><td class="num">${fmtH(r.hh)}</td><td class="num">${money(r.du)}${r.mod?'<br><small class="muted">modifié (calcul : '+money(r.brut)+')</small>':''}</td><td class="num">${money(r.pa)}</td><td class="num"><b>${money(r.reste)}</b></td><td>${r.p?dOnly(r.p.date):'—'}${r.p&&r.p.note?'<br><small class="muted">'+h(r.p.note)+'</small>':''}</td><td>${trJpTag(r)}</td>
+    ${L.length?`<div class="tw"><table><thead><tr><th>Année</th><th>Mois</th><th>Dates des travaux</th><th>Chauffeur</th><th>Travaux</th><th>Heures</th><th>Dû</th><th>Payé</th><th>Reste</th><th>Date du paiement</th><th>État</th><th></th></tr></thead><tbody>
+    ${L.map(r=>`<tr><td>${r.an}</td><td>${MOIS[+r.mo.slice(5)-1]}</td><td><small>${r.jours.map(jjmm).join(', ')||'—'}</small></td><td><b>${h(r.ch)}</b></td><td class="num">${r.n}</td><td class="num">${fmtH(r.hh)}</td><td class="num">${money(r.du)}${r.mod?'<br><small class="muted">modifié (calcul : '+money(r.brut)+')</small>':''}</td><td class="num">${money(r.pa)}</td><td class="num"><b>${money(r.reste)}</b></td><td>${r.p?dOnly(r.p.date):'—'}${r.p&&r.p.note?'<br><small class="muted">'+h(r.p.note)+'</small>':''}</td><td>${trJpTag(r)}</td>
       <td><div class="btns" style="flex-wrap:nowrap"><button class="btn sm" onclick="trJpBulletin('${encodeURIComponent(r.ch)}','${r.mo}')">Bulletin</button>${(r.st==='np'||r.st==='pp')&&r.du?`<button class="btn sm pri" onclick="trJpPayer('${encodeURIComponent(r.ch)}','${r.mo}')">Payer</button>`:''}<button class="btn sm" onclick="trJpModif('${encodeURIComponent(r.ch)}','${r.mo}')">Modifier</button></div></td></tr>`).join('')}
-    <tr style="font-weight:700"><td colspan="4">Total</td><td class="num">${money(tD)}</td><td class="num">${money(tP)}</td><td class="num">${money(tR)}</td><td colspan="3"></td></tr></tbody></table></div>`:`<div class="empty">${trJpS==='np'?'Aucun salaire impayé : tout est payé.':'Aucune paie de chauffeur pour le moment.'}</div>`}</div>`;
+    <tr style="font-weight:700"><td colspan="5">Total</td><td class="num">${fmtH(L.reduce((s,r)=>s+r.hh,0))}</td><td class="num">${money(tD)}</td><td class="num">${money(tP)}</td><td class="num">${money(tR)}</td><td colspan="3"></td></tr></tbody></table></div>`:`<div class="empty">${trJpS==='np'?'Aucun salaire impayé sur cette période.':'Aucune paie de chauffeur sur cette période.'}</div>`}</div>`;
 }
 function trJpBulletin(ch,mo){ trBul.ch=decodeURIComponent(ch); trBul.mois=mo; render(); trVoirBulletin(); }
 function trJpPayer(ch,mo){ trBul.ch=decodeURIComponent(ch); trBul.mois=mo; trPayerChauffeur(); }
@@ -2739,6 +2778,8 @@ function trJpModif(ch,mo){
   document.querySelectorAll('.modal').forEach(m=>m.remove());
   const d=r.p?locD(r.p.date):new Date().toISOString().slice(0,10);
   const md=modalPdg(`<div class="head" style="margin-bottom:.6rem"><h2 style="margin:0">Modifier la paie – ${h(ch)} – ${moisTxt(mo)}</h2><button class="btn" onclick="this.closest('.modal').remove()">Fermer</button></div>
+    <div class="row" style="margin-bottom:.4rem"><label class="f">Chauffeur<select id="jp_ch">${[...new Set([...nomsChauf(),ch])].map(c=>`<option ${c===ch?'selected':''}>${h(c)}</option>`).join('')}</select></label></div>
+    <p class="muted" style="margin:0 0 .5rem">Changer le chauffeur : les ${r.n} travail(aux) de ${moisTxt(mo)} (${r.jours.map(jjmm).join(', ')||'—'}) passent au nouveau chauffeur, payés à son taux de l’heure.</p>
     <p>Heures du mois (automatiques, elles ne changent pas) : <b>${fmtH(r.hh)}</b> – ${r.n} travail(aux)<br>Calcul automatique : ${fmtH(r.hh)} × ${money(tauxDe(ch))} = <b>${money(r.brut)}</b></p>
     <div class="row"><label class="f">Montant du salaire de ce mois (KMF)<input id="jp_du" type="number" inputmode="numeric" min="0" value="${r.du}"></label>
       <label class="f">Montant payé (KMF)<input id="jp_m" type="number" inputmode="numeric" min="0" value="${r.p?r.pa:0}"></label><label class="f">Date du paiement<input id="jp_d" type="date" value="${d}"></label></div>
@@ -2750,6 +2791,18 @@ function trJpModif(ch,mo){
 }
 async function trJpEnreg(ch,mo){
   ch=decodeURIComponent(ch); const r=trJpLignes().find(x=>x.ch===ch&&x.mo===mo); if(!r) return;
+  const nch=val('jp_ch')||ch;
+  if(nch!==ch){
+    /* changement de chauffeur : les travaux du mois passent au nouveau chauffeur (à son taux) ; le payé s'ajoute au sien */
+    const m0=n0(val('jp_m')), d0=val('jp_d')||new Date().toISOString().slice(0,10), note0=String(val('jp_n')||'').trim();
+    const L=trTravaux().filter(x=>x.chauffeur===ch&&locD(x.date).slice(0,7)===mo);
+    for(const x of L) await put('tracto',{...x,chauffeur:nch,taux:tauxDe(nch)});
+    if(r.p) await del('tracto',trPaieId(ch,mo)); if(r.mod) await del('tracto',trDuId(ch,mo));
+    const t=trJpLignes().find(x=>x.ch===nch&&x.mo===mo);
+    if(t&&m0>0){ const tot=Math.min(t.du,t.pa+m0); await put('tracto',Object.assign({},t.p||{},{id:trPaieId(nch,mo),kind:'paie',chauffeur:nch,mois:mo,heures:t.hh,taux:tauxDe(nch),montant:t.du,paye:tot,note:note0,date:new Date(d0+'T12:00:00').toISOString()})); }
+    journal('Tractopelle : paie '+moisTxt(mo)+' – chauffeur changé '+ch+' → '+nch+' ('+L.length+' travail(aux), '+fmtH(r.hh)+')');
+    document.querySelectorAll('.modal').forEach(x=>x.remove()); toast('Chauffeur changé : '+L.length+' travail(aux) passent à '+nch); render(); return;
+  }
   const m=n0(val('jp_m')), du=Math.max(0,n0(val('jp_du'))), d=val('jp_d')||new Date().toISOString().slice(0,10), note=String(val('jp_n')||'').trim();
   if(m>du){ toast('Le montant payé dépasse le salaire du mois ('+money(du)+')'); return; }
   /* montant du salaire du mois : gardé à part s'il diffère du calcul automatique ; les heures ne changent pas */
@@ -2771,10 +2824,10 @@ function trJpHTML(){
   const L=trJpFiltre().slice().reverse(), c='style="padding:5px;border:1px solid #C9D2DE;font-size:10.5px"', r='style="padding:5px;border:1px solid #C9D2DE;font-size:10.5px;text-align:right"';
   const tD=L.reduce((s,x)=>s+x.du,0), tP=L.reduce((s,x)=>s+x.pa,0), tR=L.reduce((s,x)=>s+x.reste,0);
   return `${PAYSAGE}<div class="sheet paysage">${entete('JOURNAL DE PAIE DES CHAUFFEURS – TRACTOPELLE','JP',new Date().toISOString())}
-    <p style="font-weight:700">${trJpCh?'Chauffeur : '+h(trJpCh):'Tous les chauffeurs'}${trJpS==='np'?' – non payés seulement':trJpS==='p'?' – payés seulement':''}</p>
-    <table style="border-collapse:collapse;width:100%;margin:10px 0"><thead><tr>${['Mois','Chauffeur','Travaux','Heures','Dû','Payé','Reste','Date du paiement','État'].map(t=>`<th style="padding:5px;border:1px solid #9CC9D6;font-size:10.5px;background:#4BACC6;color:#1F3864">${t}</th>`).join('')}</tr></thead><tbody>
-    ${L.map(x=>`<tr><td ${c}>${moisTxt(x.mo)}</td><td ${c}>${h(x.ch)}</td><td ${r}>${x.n}</td><td ${r}>${fmtH(x.hh)}</td><td ${r}>${money(x.du)}</td><td ${r}>${money(x.pa)}</td><td ${r}>${money(x.reste)}</td><td ${c}>${x.p?dOnly(x.p.date):'—'}</td><td ${c}>${trJpEtat(x)}</td></tr>`).join('')||`<tr><td ${c} colspan="9">Aucune ligne</td></tr>`}
-    <tr style="font-weight:700;background:#F3DADA"><td ${c} colspan="4">Total</td><td ${r}>${money(tD)}</td><td ${r}>${money(tP)}</td><td ${r}>${money(tR)}</td><td ${c} colspan="2"></td></tr></tbody></table>
+    <p style="font-weight:700">${h(trJpPerTxt())} – ${trJpCh?'Chauffeur : '+h(trJpCh):'Tous les chauffeurs'}${trJpS==='np'?' – non payés seulement':trJpS==='p'?' – payés seulement':''}</p>
+    <table style="border-collapse:collapse;width:100%;margin:10px 0"><thead><tr>${['Année','Mois','Dates des travaux','Chauffeur','Travaux','Heures','Dû','Payé','Reste','Date du paiement','État'].map(t=>`<th style="padding:5px;border:1px solid #9CC9D6;font-size:10.5px;background:#4BACC6;color:#1F3864">${t}</th>`).join('')}</tr></thead><tbody>
+    ${L.map(x=>`<tr><td ${c}>${x.an}</td><td ${c}>${MOIS[+x.mo.slice(5)-1]}</td><td ${c}>${x.jours.map(jjmm).join(', ')||'—'}</td><td ${c}>${h(x.ch)}</td><td ${r}>${x.n}</td><td ${r}>${fmtH(x.hh)}</td><td ${r}>${money(x.du)}</td><td ${r}>${money(x.pa)}</td><td ${r}>${money(x.reste)}</td><td ${c}>${x.p?dOnly(x.p.date):'—'}</td><td ${c}>${trJpEtat(x)}</td></tr>`).join('')||`<tr><td ${c} colspan="11">Aucune ligne</td></tr>`}
+    <tr style="font-weight:700;background:#F3DADA"><td ${c} colspan="5">Total</td><td ${r}>${fmtH(L.reduce((s,x)=>s+x.hh,0))}</td><td ${r}>${money(tD)}</td><td ${r}>${money(tP)}</td><td ${r}>${money(tR)}</td><td ${c} colspan="2"></td></tr></tbody></table>
     <div class="tt"><div><span>Total dû</span><span>${money(tD)}</span></div><div><span>Total payé</span><span>${money(tP)}</span></div><div class="g"><span>Reste à payer</span><span>${money(tR)}</span></div></div>
     <div class="bottom">${h(S.nom)} – ${h(S.adresse)}</div></div>`;
 }

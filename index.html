@@ -367,7 +367,7 @@ const IC = {
 const NAV = [['menu','Menu principal','menu'],['home','Accueil','home'],['facture','Facture','fac'],['registre','Registre','reg'],['charges','Charges','chg'],['employes','Employés','emp'],['paie','Paie','pay'],['pdg','PDG','pdg'],['compte','Compte SNI','rap'],['tracto','Tractopelle','trc'],['wusu','Wusukani Wamasiwa','wus'],['param','Paramètres','par']];
 const svg = k => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${IC[k]}</svg>`;
 let view = 'menu';
-const VERSION_APP='2.0.118';
+const VERSION_APP='2.0.119';
 /* Créateur du logiciel : coordonnées fixes, intégrées au code (identiques dans chaque installation, non modifiables) */
 const CREATEUR={nom:'ALI DAÏM',email:'daim3575@gmail.com',tels:['+269 323 05 70','+269 432 29 14']};
 const waLien=t=>'https://wa.me/'+t.replace(/\D/g,'');
@@ -4111,7 +4111,35 @@ function wuCompteHTML(p){
    Débit = charges fixes, charges variables, salaires, emprunts du PDG (partie SNI). Solde = crédit − débit. */
 let scP=ymNow();
 /* Page « Compte SNI » : toutes les transactions de SNI du mois (factures payées, charges, salaires, PDG partie SNI) */
-function vCompteSni(m){ m.innerHTML=`<div class="head"><div><h1>Compte SNI</h1><p>Toutes les transactions de SNI du mois : factures payées, charges fixes et variables, salaires, emprunts et remboursements du PDG (caisse SNI)</p></div></div>${sniJournalCard()}${sniCompteCard()}`; }
+function vCompteSni(m){ m.innerHTML=`<div class="head"><div><h1>Compte SNI</h1><p>Toutes les transactions de SNI du mois : factures payées, charges fixes et variables, salaires, emprunts et remboursements du PDG (caisse SNI)</p></div></div>${sniChargeCard()}${sniJournalCard()}${sniCompteCard()}`; }
+/* Ajouter directement une charge fixe ou une charge variable de SNI depuis la page Compte SNI */
+let scT='fixe';
+function scCalc(){ const q=+val('sc_q')||0, pu=n0(val('sc_pu')), e=document.getElementById('sc_m'); if(e&&q&&pu) e.value=Math.round(q*pu); }
+function sniChargeCard(){
+  const fx=scT==='fixe', cats=fx?['Électricité','Loyer','Internet','Eau','Assurance','Abonnement','Taxes et impôts','Autre charge fixe']:[...new Set([...CATS_V,...CHG.filter(c=>c.type==='variable').map(rubrique)])];
+  const L=CHG.filter(c=>ym(c.date)===scP&&!salAilleurs(c)&&(fx?(c.type!=='variable'&&c.type!=='salaire'):c.type==='variable')), tot=L.reduce((s,c)=>s+n0(c.montant),0);
+  return `<div class="card"><h2>Ajouter une charge de SNI</h2>
+    <div class="btns" style="margin-bottom:.6rem"><button class="btn ${fx?'pri':''}" onclick="scT='fixe';render()">Charge fixe</button><button class="btn ${fx?'':'pri'}" onclick="scT='variable';render()">Charge variable</button></div>
+    <p class="muted" style="margin-top:0">${fx?'Charges fixes : électricité, loyer, internet, eau, assurance…':'Charges variables : papier, encre, transport, carburant, réparation…'} – elles entrent tout de suite dans le journal et le tableau de compte SNI ci-dessous.</p>
+    <div class="row"><label class="f" style="flex:0 0 auto">Date<input id="sc_d" type="date" value="${auj()}"></label>
+      <label class="f" style="max-width:240px">Catégorie<input id="sc_c" list="sc_cats" placeholder="Choisir ou écrire" value="${fx?'Électricité':''}"><datalist id="sc_cats">${cats.map(x=>`<option value="${h(x)}">`).join('')}</datalist></label>
+      <label class="f">Désignation<input id="sc_n" placeholder="${fx?'Ex. : recharge compteur atelier':'Ex. : rames de papier A4'}"></label></div>
+    <div class="row" style="margin-top:.6rem"><label class="f" style="max-width:120px">Quantité<input id="sc_q" type="number" inputmode="decimal" min="0" oninput="scCalc()"></label>
+      <label class="f" style="max-width:160px">Prix unitaire (KMF)<input id="sc_pu" type="number" inputmode="numeric" min="0" oninput="scCalc()"></label>
+      <label class="f" style="max-width:170px">Montant (KMF)<input id="sc_m" type="number" inputmode="numeric" min="0"></label>
+      <label class="f">Fournisseur<input id="sc_f" placeholder="Facultatif"></label>
+      <label class="f" style="max-width:180px">Paiement<select id="sc_p">${MODES.map(x=>`<option>${x}</option>`).join('')}</select></label>
+      <button class="btn pri" style="flex:0 0 auto;align-self:flex-end" onclick="sniAddCharge()">Ajouter la ${fx?'charge fixe':'charge variable'}</button></div>
+    <p class="muted" style="margin:.6rem 0 0">${fx?'Charges fixes':'Charges variables'} de ${h(moisTxt(scP))} : <b>${money(tot)}</b> (${L.length})</p></div>`;
+}
+async function sniAddCharge(){
+  const fx=scT==='fixe', cat=String(val('sc_c')||'').trim()||(fx?'Autre charge fixe':'Divers'), des=String(val('sc_n')||'').trim(), q=+val('sc_q')||0, pu=n0(val('sc_pu')), m=n0(val('sc_m'))||Math.round(q*pu), d=val('sc_d')||auj();
+  if(m<=0){ toast('Indiquez le montant (ou la quantité et le prix)'); document.getElementById('sc_m').focus(); return; }
+  const type=fx?(/lectri/i.test(cat)?'electricite':'autre'):'variable';
+  await put('charges',{id:uid(),type,cat,des,qte:q||'',pu:pu||'',four:String(val('sc_f')||'').trim(),mode:val('sc_p'),date:new Date(d+'T'+new Date().toTimeString().slice(0,8)).toISOString(),montant:m,note:cat+(des?' – '+des:''),par:imprimeur()||''});
+  journal('Compte SNI : '+(fx?'charge fixe':'charge variable')+' ajoutée – '+cat+(des?' – '+des:'')+' '+money(m));
+  scP=d.slice(0,7); toast((fx?'Charge fixe':'Charge variable')+' ajoutée : '+money(m)); render();
+}
 /* Journal du mois (Compte SNI) : factures (définitives et proformas), charges fixes et charges variables,
    présentés en N° de facture, Date et heure, Client, Qté, Prix unitaire, Montant ; totaux en bas */
 function sniJournal(p){

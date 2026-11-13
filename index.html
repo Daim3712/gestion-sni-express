@@ -367,7 +367,7 @@ const IC = {
 const NAV = [['menu','Menu principal','menu'],['home','Accueil','home'],['facture','Facture','fac'],['registre','Registre','reg'],['journal','Journal des saisies','reg'],['charges','Charges','chg'],['employes','Employés','emp'],['paie','Paie','pay'],['pdg','PDG','pdg'],['compte','Compte SNI','rap'],['tracto','Tractopelle','trc'],['wusu','Wusukani Wamasiwa','wus'],['param','Paramètres','par']];
 const svg = k => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${IC[k]}</svg>`;
 let view = 'menu';
-const VERSION_APP='2.0.114';
+const VERSION_APP='2.0.115';
 /* Créateur du logiciel : coordonnées fixes, intégrées au code (identiques dans chaque installation, non modifiables) */
 const CREATEUR={nom:'ALI DAÏM',email:'daim3575@gmail.com',tels:['+269 323 05 70','+269 432 29 14']};
 const waLien=t=>'https://wa.me/'+t.replace(/\D/g,'');
@@ -2778,10 +2778,11 @@ function trJournalPaieCard(){
       ${trJpVue==='mois'?choixMoisAn('trjpm',trJpP||ymNow(),'trJpP=v||trJpP;render()'):trJpVue==='annee'?`<label class="f" style="flex:0 0 auto">Année<select style="width:auto" onchange="trJpP=this.value+'-01';render()">${[...new Set([ymNow().slice(0,4),...A.map(r=>r.an)])].sort().reverse().map(a=>`<option ${a===(trJpP||ymNow()).slice(0,4)?'selected':''}>${a}</option>`).join('')}</select></label>`:trJpVue==='jour'?`<label class="f" style="flex:0 0 auto">Date<input type="date" value="${trJpJ||auj()}" onchange="trJpJ=this.value;render()"></label>`:''}
       <label class="f" style="flex:0 0 auto">Afficher<select style="width:auto" onchange="trJpS=this.value;render()"><option value="">Tout</option><option value="np" ${trJpS==='np'?'selected':''}>Non payés seulement</option><option value="p" ${trJpS==='p'?'selected':''}>Payés seulement</option></select></label></div>
     <div style="border:1px dashed var(--line,#ccd);border-radius:10px;padding:.6rem .8rem;margin-bottom:.8rem"><b>Donner une avance au chauffeur</b>
-      <div class="row" style="margin-top:.4rem;align-items:flex-end"><label class="f" style="flex:0 0 auto">Chauffeur<select id="jpa_ch">${[...new Set([...nomsChauf(),...chs])].map(c=>`<option ${trJpCh===c?'selected':''}>${h(c)}</option>`).join('')||'<option value="">— Ajoutez un chauffeur —</option>'}</select></label>
-        <label class="f" style="flex:0 0 auto">Pour le mois de<input id="jpa_mo" type="month" value="${ymNow()}"></label><label class="f" style="flex:0 0 auto">Date<input id="jpa_d" type="date" value="${auj()}"></label>
-        <label class="f" style="flex:0 0 150px">Montant de l’avance (KMF)<input id="jpa_m" type="number" inputmode="numeric" min="0"></label><label class="f">Note<input id="jpa_n" placeholder="Facultatif"></label>
+      <div class="row" style="margin-top:.4rem;align-items:flex-end"><label class="f" style="flex:0 0 auto">Chauffeur<select id="jpa_ch" onchange="trJpAvInfo()">${[...new Set([...nomsChauf(),...chs])].map(c=>`<option ${(trJpAv.ch||trJpCh)===c?'selected':''}>${h(c)}</option>`).join('')||'<option value="">— Ajoutez un chauffeur —</option>'}</select></label>
+        <label class="f" style="flex:0 0 auto">Pour le mois de<input id="jpa_mo" type="month" value="${trJpAv.mo||ymNow()}" onchange="trJpAvInfo()" oninput="trJpAvInfo()"></label><label class="f" style="flex:0 0 auto">Date<input id="jpa_d" type="date" value="${auj()}"></label>
+        <label class="f" style="flex:0 0 150px">Montant de l’avance (KMF)<input id="jpa_m" type="number" inputmode="numeric" min="0" oninput="trJpAvInfo()"></label><label class="f">Note<input id="jpa_n" placeholder="Facultatif"></label>
         <button class="btn pri" style="flex:0 0 auto" onclick="trJpAvance()">Donner l’avance</button></div>
+      <div id="jpa_info" style="margin-top:.5rem">${trJpAvInfoHTML(trJpAv.ch||trJpCh||[...new Set([...nomsChauf(),...chs])][0]||'',trJpAv.mo||ymNow(),0)}</div>
       <p class="muted" style="margin:.4rem 0 0">L’avance est déduite du salaire du mois choisi : la colonne « Reste » montre ce qu’il reste à payer au chauffeur.</p></div>
     <div class="kpis" style="margin:.4rem 0 .8rem"><div class="kpi amber"><small>Total dû</small><b class="num">${money(tD)}</b></div><div class="kpi"><small>Dont avances données</small><b class="num">${money(L.reduce((s,r)=>s+r.avT,0))}</b></div><div class="kpi paid"><small>Total payé (avances comprises)</small><b class="num">${money(tP)}</b></div><div class="kpi unpaid"><small>Reste à payer</small><b class="num">${money(tR)}</b></div></div>
     ${L.length?`<div class="tw"><table><thead><tr><th>Année</th><th>Mois</th><th>Dates des travaux</th><th>Chauffeur</th><th>Travaux</th><th>Heures</th><th>Dû</th><th>Avances (date et montant)</th><th>Payé</th><th>Reste</th><th>Date du paiement</th><th>État</th><th></th></tr></thead><tbody>
@@ -2789,12 +2790,27 @@ function trJournalPaieCard(){
       <td><div class="btns" style="flex-wrap:nowrap"><button class="btn sm" onclick="trJpBulletin('${encodeURIComponent(r.ch)}','${r.mo}')">Bulletin</button>${(r.st==='np'||r.st==='pp')&&r.du?`<button class="btn sm pri" onclick="trJpPayer('${encodeURIComponent(r.ch)}','${r.mo}')">Payer</button>`:''}<button class="btn sm" onclick="trJpAvance('${encodeURIComponent(r.ch)}','${r.mo}')">Avance</button><button class="btn sm" onclick="trJpModif('${encodeURIComponent(r.ch)}','${r.mo}')">Modifier</button></div></td></tr>`).join('')}
     <tr style="font-weight:700"><td colspan="5">Total</td><td class="num">${fmtH(L.reduce((s,r)=>s+r.hh,0))}</td><td class="num">${money(tD)}</td><td class="num">${money(L.reduce((s,r)=>s+r.avT,0))}</td><td class="num">${money(tP)}</td><td class="num">${money(tR)}</td><td colspan="3"></td></tr></tbody></table></div>`:`<div class="empty">${trJpS==='np'?'Aucun salaire impayé sur cette période.':'Aucune paie de chauffeur sur cette période.'}</div>`}</div>`;
 }
-/* Avance au chauffeur : depuis le formulaire (chauffeur, mois, date, montant) ou le bouton « Avance » d'une ligne */
+/* Avant de donner l'avance : on voit tout de suite le salaire du mois, ce qui est déjà payé, le reste avant
+   et après cette avance, et les arriérés (mois précédents pas encore payés) du chauffeur */
+let trJpAv={ch:'',mo:''};
+function trJpAvInfoHTML(ch,mo,m){
+  if(!ch) return '';
+  const A=trJpLignes().filter(r=>r.ch===ch), r=A.find(x=>x.mo===mo)||{du:0,pa:0,reste:0,hh:0,n:0};
+  const apres=r.reste-m, arr=A.filter(x=>x.mo<mo&&x.reste>0).sort((a,b)=>a.mo.localeCompare(b.mo)), tArr=arr.reduce((s,x)=>s+x.reste,0);
+  const tout=A.reduce((s,x)=>s+x.reste,0)-Math.min(m,r.reste);
+  return `<div class="kpis" style="margin:0"><div class="kpi amber"><small>Salaire de ${moisTxt(mo)} (${fmtH(r.hh)})</small><b class="num">${money(r.du)}</b></div>
+    <div class="kpi paid"><small>Déjà payé ce mois</small><b class="num">${money(r.pa)}</b></div>
+    <div class="kpi unpaid"><small>Reste avant l’avance</small><b class="num">${money(r.reste)}</b></div>
+    <div class="kpi ${apres>0?'unpaid':'paid'}"><small>${m>0?'Reste après cette avance de '+money(m):'Reste après l’avance'}</small><b class="num">${apres>=0?money(apres):'0 KMF'}</b>${apres<0?`<small style="display:block;color:var(--unpaid)">avance en trop : ${money(-apres)}</small>`:''}</div>
+    <div class="kpi ${tArr?'unpaid':'paid'}"><small>Arriérés non payés (mois d’avant)</small><b class="num">${money(tArr)}</b>${arr.length?`<small style="display:block">${arr.map(x=>MOIS[+x.mo.slice(5)-1]+' '+x.an+' : '+money(x.reste)).join(' · ')}</small>`:''}</div>
+    <div class="kpi"><small>Total encore dû à ${h(ch)} après l’avance</small><b class="num">${money(Math.max(0,tout))}</b></div></div>`;
+}
+function trJpAvInfo(){ const e=document.getElementById('jpa_info'); if(!e) return; trJpAv={ch:val('jpa_ch'),mo:val('jpa_mo')||ymNow()}; e.innerHTML=trJpAvInfoHTML(trJpAv.ch,trJpAv.mo,n0(val('jpa_m'))); }
+/* Avance au chauffeur : depuis le formulaire (chauffeur, mois, date, montant) ; le bouton « Avance » d'une ligne remplit le formulaire */
 async function trJpAvance(che,moL){
   let ch, mo, d, m, note;
-  if(che){ ch=decodeURIComponent(che); mo=moL; const r=trJpLignes().find(x=>x.ch===ch&&x.mo===mo);
-    const v=await demander('Avance à '+ch+' pour '+moisTxt(mo)+(r?'\nSalaire du mois : '+money(r.du)+' – déjà payé : '+money(r.pa)+' – reste : '+money(r.reste):'')+'\nMontant de l’avance (KMF) :',''); if(v==null) return;
-    m=n0(v); d=auj(); note=''; }
+  if(che){ trJpAv={ch:decodeURIComponent(che),mo:moL}; render();
+    const f=document.getElementById('jpa_m'); if(f){ f.scrollIntoView({block:'center'}); f.focus(); } return; }
   else { ch=val('jpa_ch'); mo=val('jpa_mo')||ymNow(); d=val('jpa_d')||auj(); m=n0(val('jpa_m')); note=String(val('jpa_n')||'').trim();
     if(!ch){ toast('Choisissez le chauffeur'); return; } }
   if(m<=0){ toast('Indiquez le montant de l’avance'); const e=document.getElementById('jpa_m'); if(e&&!che) e.focus(); return; }

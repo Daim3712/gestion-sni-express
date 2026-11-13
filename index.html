@@ -367,7 +367,7 @@ const IC = {
 const NAV = [['menu','Menu principal','menu'],['home','Accueil','home'],['facture','Facture','fac'],['registre','Registre','reg'],['journal','Journal des saisies','reg'],['charges','Charges','chg'],['employes','Employés','emp'],['paie','Paie','pay'],['pdg','PDG','pdg'],['compte','Compte SNI','rap'],['tracto','Tractopelle','trc'],['wusu','Wusukani Wamasiwa','wus'],['param','Paramètres','par']];
 const svg = k => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${IC[k]}</svg>`;
 let view = 'menu';
-const VERSION_APP='2.0.107';
+const VERSION_APP='2.0.108';
 /* Créateur du logiciel : coordonnées fixes, intégrées au code (identiques dans chaque installation, non modifiables) */
 const CREATEUR={nom:'ALI DAÏM',email:'daim3575@gmail.com',tels:['+269 323 05 70','+269 432 29 14']};
 const waLien=t=>'https://wa.me/'+t.replace(/\D/g,'');
@@ -1725,7 +1725,7 @@ const rembP = t => (t.rembs||[]).reduce((s,r)=>s+n0(r.montant),0);
 /* Apport : argent mis par le PDG dans la caisse (fonds de roulement, ou type libre « apporté ») – crédit, rien à rembourser par le PDG */
 const estApport = t => t && t.sens==='apport';
 const resteP = t => estApport(t)?0:Math.max(0, n0(t.montant)-rembP(t));
-const typeP = t => t.type==='reliquat'?'Reliquat':t.type==='fonds'?'Fonds de roulement':t.type==='autre'?(t.libelle||'Autre'):'Emprunt';
+const typeP = t => t.type==='reliquat'?'Reliquat':t.type==='avance'?'Avance':t.type==='fonds'?'Fonds de roulement':t.type==='autre'?(t.libelle||'Autre'):'Emprunt';
 const tagP = t => estApport(t)?'<span class="tag paid">Apport du PDG</span>':resteP(t)<=0?'<span class="tag paid">Payé</span>':'<span class="tag unpaid">Reliquat – Impayé</span>';
 let pdgF='tous';
 /* Répartition : chaque transaction du PDG appartient à une partie (caisse d'où l'argent est pris) ;
@@ -3855,7 +3855,7 @@ const wuAns=()=>{ const s=new Set([ymNow().slice(0,4),...WUS.map(x=>ym(x.date).s
 const wuTitre=p=>'Tableau de compte '+WNOM+(!p?' – TOUT LE COMPTE':p.length===4?' de l’année '+p:' du mois de '+moisTxt(p).toUpperCase());
 const WU_COLS=['Date / heure','N°','Client','Désignation','Déjeuner','Qté','P-U','Montant','Débit (dépenses)','Crédit (encaissé)','Solde (crédit − débit)','Reçu'];
 const wuDes=l=>l.k==='c'?(l.x.type==='fixe'?'Charge fixe':'Charge variable')+' – '+l.x.categorie+(l.x.libelle?' – '+l.x.libelle:''):l.k==='p'?'Paiement reçu pour '+l.x.num+' – '+l.x.des
-  :l.k==='pe'?'Emprunt du PDG – '+typeP(l.x)+' – '+motifP(l.x):l.k==='pr'?nomRemb(l.r)+' du PDG – pour le reçu '+(l.x.num||''):l.k==='pa'?'Apport du PDG – '+typeP(l.x):(l.x.typeImp?l.x.typeImp+' – ':'')+l.x.des+(l.x.cellule?' – Cellule de '+l.x.cellule:'');
+  :l.k==='pe'?(l.x.type==='avance'?'Avance du PDG':l.x.type==='autre'?'Autre (PDG) – '+typeP(l.x):'Emprunt du PDG – '+typeP(l.x))+(l.x.type==='autre'?'':' – '+motifP(l.x)):l.k==='pr'?nomRemb(l.r)+' du PDG – pour le reçu '+(l.x.num||''):l.k==='pa'?(l.x.libelle==='Remboursement'?'Remboursement du PDG'+(l.x.note?' – '+l.x.note:''):'Apport du PDG – '+typeP(l.x)):(l.x.typeImp?l.x.typeImp+' – ':'')+l.x.des+(l.x.cellule?' – Cellule de '+l.x.cellule:'');
 const wuNumL=l=>l.k==='p'?l.q.num:l.k==='pr'?(l.r.num||'—'):(l.x.num||'—');
 const wuStat=l=>l.k==='c'?'Dépense':l.k==='p'?'Paiement':l.k==='pe'?(resteP(l.x)>0?'Reliquat – Impayé':'Remboursé'):l.k==='pr'?'Remboursé':l.k==='pa'?'Apport':wuReste(l.x)?(wuPaye(l.x)?'Payé en partie':'Impayé'):'Payé';
 const wuRecuNum=l=>l.k==='v'?((l.x.paiements||[]).slice(-1)[0]?.num||'—'):l.k==='p'?l.q.num:l.k==='c'?'—':wuNumL(l);
@@ -3863,14 +3863,15 @@ const wuRecuNum=l=>l.k==='v'?((l.x.paiements||[]).slice(-1)[0]?.num||'—'):l.k=
 const PARTIE_WU=()=>PARTIES().find(p=>/wusukani/i.test(p))||'Wusukani Wamasiwa';
 const wuPdg=()=>PDG.filter(t=>partieDe(t)===PARTIE_WU());
 function wuPdgCard(){
-  const L=wuPdg().filter(t=>!estApport(t)).sort((a,b)=>b.date.localeCompare(a.date)), tot=L.reduce((s,t)=>s+n0(t.montant),0), rb=L.reduce((s,t)=>s+rembP(t),0), re=L.reduce((s,t)=>s+resteP(t),0);
+  const L=wuPdg().sort((a,b)=>b.date.localeCompare(a.date)), Dt=L.filter(t=>!estApport(t)), tot=Dt.reduce((s,t)=>s+n0(t.montant),0), rb=Dt.reduce((s,t)=>s+rembP(t),0), re=Dt.reduce((s,t)=>s+resteP(t),0);
   return `<div class="card"><h2>Transactions du PDG – caisse ${WNOM}</h2>
     <p class="muted" style="margin-top:0">L’argent que le PDG prend dans la caisse ${WNOM} va au <b>débit</b> de son tableau de compte ; ses remboursements vont au <b>crédit</b>. Ces transactions apparaissent aussi dans la page PDG, caisse « ${h(PARTIE_WU())} », et ne touchent pas le compte SNI.</p>
     <div class="row">
       <label class="f" style="flex:0 0 auto">Date<input id="wup_d" type="date" value="${auj()}"></label>
-      <label class="f" style="flex:0 0 auto">Type<select id="wup_t"><option value="emprunt">Emprunt</option><option value="reliquat">Reliquat</option></select></label>
+      <label class="f" style="flex:0 0 auto">Type<select id="wup_t" onchange="wuPdgType()"><option value="emprunt">Emprunt</option><option value="avance">Avance</option><option value="remb">Remboursement</option><option value="reliquat">Reliquat</option><option value="autre">Autre</option></select></label>
       <label class="f" style="flex:0 0 150px">Montant (KMF)<input id="wup_m" type="number" inputmode="numeric" min="0"></label>
-      <label class="f">Motif<select id="wup_mo">${MOTIFS.map(x=>`<option>${x}</option>`).join('')}</select></label>
+      <label class="f" id="wup_mol">Motif<select id="wup_mo">${MOTIFS.map(x=>`<option>${x}</option>`).join('')}</select></label>
+      <label class="f" id="wup_sl" style="display:none">Sens<select id="wup_s"><option value="sortie">Le PDG prend l’argent (débit)</option><option value="apport">Le PDG met de l’argent (crédit)</option></select></label>
       <label class="f">Précision<input id="wup_n" placeholder="Facultatif"></label>
       <button class="btn pri" style="flex:0 0 auto;align-self:flex-end" onclick="addWuPdg()">Enregistrer la transaction</button></div>
     <div class="kpis" style="margin:.9rem 0 .6rem"><div class="kpi amber"><small>Emprunté par le PDG</small><b class="num">${money(tot)}</b></div><div class="kpi paid"><small>Remboursé</small><b class="num">${money(rb)}</b></div><div class="kpi unpaid"><small>Reste à rembourser</small><b class="num">${money(re)}</b></div></div>
@@ -3878,12 +3879,29 @@ function wuPdgCard(){
     ${L.map(t=>`<tr><td>${dOnly(t.date)}</td><td>${h(t.num||'—')}</td><td>${typeP(t)}</td><td>${h(motifP(t))}</td><td class="r num">${money(t.montant)}</td><td class="r num">${money(rembP(t))}</td><td class="r num">${money(resteP(t))}</td><td>${tagP(t)}</td>
       <td><div class="btns" style="flex-wrap:nowrap"><button class="btn sm" onclick="voirRecu('${t.id}')">Reçu</button>${resteP(t)>0?`<button class="btn sm pri" onclick="rembPdg('${t.id}')">Rembourser</button>`:''}</div></td></tr>`).join('')}</tbody></table></div>`:'<div class="empty">Aucune transaction du PDG dans cette caisse.</div>'}</div>`;
 }
+/* Type choisi : Remboursement n'a pas de motif ; Autre demande le sens (le PDG prend ou met de l'argent) */
+function wuPdgType(){ const t=val('wup_t'), mo=document.getElementById('wup_mol'), s=document.getElementById('wup_sl'), n=document.getElementById('wup_n');
+  if(mo) mo.style.display=t==='remb'?'none':''; if(s) s.style.display=t==='autre'?'':'none';
+  if(n) n.placeholder=t==='autre'?'Précisez (obligatoire)':t==='remb'?'Facultatif (ex. rendu en espèces)':'Facultatif'; }
 async function addWuPdg(){
-  const d=val('wup_d')||auj(), ty=val('wup_t')==='reliquat'?'reliquat':'emprunt', montant=n0(val('wup_m')), motif=val('wup_mo'), note=String(val('wup_n')||'').trim();
+  const d=val('wup_d')||auj(), tv=val('wup_t'), montant=n0(val('wup_m')), motif=val('wup_mo'), note=String(val('wup_n')||'').trim();
   if(montant<=0){ toast('Indiquez le montant'); document.getElementById('wup_m').focus(); return; }
-  if(motif==='Autre'&&!note){ toast('Précisez le motif'); document.getElementById('wup_n').focus(); return; }
-  const id=uid(), partie=PARTIE_WU(); if(!PARTIES().includes(partie)){ S.partiesPdg=[...PARTIES().filter(p=>p!=='Autres'),partie]; try{ await saveSettings(); }catch(e){} }
-  await put('pdg',{id,num:nextRec('REC'),type:ty,partie,date:new Date(d+'T12:00:00').toISOString(),montant,motif,note,moyen:'Espèces',compte:'',rembs:[]});
+  if(tv!=='remb'&&motif==='Autre'&&!note){ toast('Précisez le motif'); document.getElementById('wup_n').focus(); return; }
+  if(tv==='autre'&&!note){ toast('Précisez ce que c’est'); document.getElementById('wup_n').focus(); return; }
+  const id=uid(), partie=PARTIE_WU(), iso=new Date(d+'T12:00:00').toISOString(); if(!PARTIES().includes(partie)){ S.partiesPdg=[...PARTIES().filter(p=>p!=='Autres'),partie]; try{ await saveSettings(); }catch(e){} }
+  if(tv==='remb'){
+    /* Remboursement : rembourse d'abord les plus anciennes dettes du PDG dans cette caisse ; le surplus devient un apport */
+    let r=montant; const D=wuPdg().filter(t=>resteP(t)>0).sort((a,b)=>a.date.localeCompare(b.date)); let der=null;
+    for(const t of D){ if(r<=0) break; const m=Math.min(r,resteP(t)); r-=m; const rid=uid();
+      await put('pdg',{...t,rembs:[...(t.rembs||[]),{id:rid,num:nextRec('RMB'),date:iso,montant:m,partie,note}]}); der={id:t.id,rid}; }
+    if(r>0){ await put('pdg',{id,num:nextRec('REC'),type:'autre',libelle:'Remboursement',sens:'apport',partie,date:iso,montant:r,motif:'',note:note||(D.length?'Surplus du remboursement':'Remboursement du PDG'),moyen:'Espèces',compte:'',rembs:[]}); der=null; }
+    journal('PDG : remboursement de '+money(montant)+' dans la caisse '+partie);
+    toast('Remboursement de '+money(montant)+' enregistré : il apparaît au crédit du compte '+WNOM+(r>0&&D.length?' (dont '+money(r)+' en plus des dettes)':''));
+    wuP=ym(iso); render(); if(der) voirRecuRemb(der.id,der.rid); else voirRecu(id); return;
+  }
+  const ty=tv==='reliquat'?'reliquat':tv==='avance'?'avance':tv==='autre'?'autre':'emprunt', apport=tv==='autre'&&val('wup_s')==='apport';
+  await put('pdg',Object.assign({id,num:nextRec('REC'),type:ty,partie,date:iso,montant,motif:tv==='autre'?'':motif,note,moyen:'Espèces',compte:'',rembs:[]},tv==='autre'?{libelle:note}:{},apport?{sens:'apport'}:{}));
+  if(apport){ journal('PDG : '+money(montant)+' mis dans la caisse '+partie+' ('+note+')'); toast('Transaction enregistrée : elle apparaît au crédit du compte '+WNOM); wuP=ym(iso); render(); voirRecu(id); return; }
   journal('PDG : '+money(montant)+' pris dans la caisse '+partie); toast('Transaction du PDG enregistrée : elle apparaît au débit du compte '+WNOM); wuP=ym(new Date(d+'T12:00:00').toISOString()); render(); voirRecu(id);
 }
 function wuCompteCard(){

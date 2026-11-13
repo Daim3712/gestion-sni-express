@@ -367,7 +367,7 @@ const IC = {
 const NAV = [['menu','Menu principal','menu'],['home','Accueil','home'],['facture','Facture','fac'],['registre','Registre','reg'],['journal','Journal des saisies','reg'],['charges','Charges','chg'],['employes','Employés','emp'],['paie','Paie','pay'],['pdg','PDG','pdg'],['compte','Compte SNI','rap'],['tracto','Tractopelle','trc'],['wusu','Wusukani Wamasiwa','wus'],['param','Paramètres','par']];
 const svg = k => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${IC[k]}</svg>`;
 let view = 'menu';
-const VERSION_APP='2.0.115';
+const VERSION_APP='2.0.116';
 /* Créateur du logiciel : coordonnées fixes, intégrées au code (identiques dans chaque installation, non modifiables) */
 const CREATEUR={nom:'ALI DAÏM',email:'daim3575@gmail.com',tels:['+269 323 05 70','+269 432 29 14']};
 const waLien=t=>'https://wa.me/'+t.replace(/\D/g,'');
@@ -2840,9 +2840,9 @@ function trJpModif(ch,mo){
   document.querySelectorAll('.modal').forEach(m=>m.remove());
   const d=r.p?locD(r.p.date):new Date().toISOString().slice(0,10);
   const md=modalPdg(`<div class="head" style="margin-bottom:.6rem"><h2 style="margin:0">Modifier la paie – ${h(ch)} – ${moisTxt(mo)}</h2><button class="btn" onclick="this.closest('.modal').remove()">Fermer</button></div>
-    <div class="row" style="margin-bottom:.4rem"><label class="f">Chauffeur<select id="jp_ch">${[...new Set([...nomsChauf(),ch])].map(c=>`<option ${c===ch?'selected':''}>${h(c)}</option>`).join('')}</select></label></div>
-    <p class="muted" style="margin:0 0 .5rem">Changer le chauffeur : les ${r.n} travail(aux) de ${moisTxt(mo)} (${r.jours.map(jjmm).join(', ')||'—'}) passent au nouveau chauffeur, payés à son taux de l’heure.</p>
-    <p>Heures du mois (automatiques, elles ne changent pas) : <b>${fmtH(r.hh)}</b> – ${r.n} travail(aux)<br>Calcul automatique : ${fmtH(r.hh)} × ${money(tauxDe(ch))} = <b>${money(r.brut)}</b></p>
+    <div class="row" style="margin-bottom:.4rem"><label class="f">Chauffeur<select id="jp_ch" onchange="trJpChCalc(${r.hh},${r.du},'${encodeURIComponent(ch)}')">${[...new Set([...nomsChauf(),ch])].map(c=>`<option ${c===ch?'selected':''}>${h(c)}</option>`).join('')}</select></label></div>
+    <p class="muted" style="margin:0 0 .5rem">Changer le chauffeur : les ${r.n} travail(aux) de ${moisTxt(mo)} (${r.jours.map(jjmm).join(', ')||'—'}) passent au nouveau chauffeur, payés à son taux de l’heure. Vous pouvez changer le chauffeur et la paie en même temps, puis « Enregistrer ».</p>
+    <p>Heures du mois (automatiques, elles ne changent pas) : <b>${fmtH(r.hh)}</b> – ${r.n} travail(aux)<br><span id="jp_calc">Calcul automatique : ${fmtH(r.hh)} × ${money(tauxDe(ch))} = <b>${money(r.brut)}</b></span></p>
     <div class="row"><label class="f">Montant du salaire de ce mois (KMF)<input id="jp_du" type="number" inputmode="numeric" min="0" value="${r.du}"></label>
       <label class="f">Montant payé (KMF)<input id="jp_m" type="number" inputmode="numeric" min="0" value="${r.p?r.pa:0}"></label><label class="f">Date du paiement<input id="jp_d" type="date" value="${d}"></label></div>
     ${r.mod?`<button class="btn sm" style="margin-top:.4rem" onclick="document.getElementById('jp_du').value='${r.brut}'">Revenir au calcul automatique (${money(r.brut)})</button>`:''}
@@ -2851,29 +2851,33 @@ function trJpModif(ch,mo){
     <div class="btns" style="margin-top:.6rem"><button class="btn pri" onclick="trJpEnreg('${encodeURIComponent(ch)}','${mo}')">Enregistrer</button>${r.p?`<button class="btn" onclick="trJpNonPaye('${encodeURIComponent(ch)}','${mo}')">Marquer non payé</button>`:''}<button class="btn" onclick="this.closest('.modal').remove()">Annuler</button></div>`);
   md.querySelector('.in').style.maxWidth='560px';
 }
+/* dans « Modifier » : en changeant de chauffeur, le salaire se recalcule tout de suite à son taux (on peut encore le changer) */
+function trJpChCalc(hh,du0,ch0){ const c=val('jp_ch'), a=decodeURIComponent(ch0), du=c===a?du0:Math.round(hh*tauxDe(c)), e=document.getElementById('jp_calc'), f=document.getElementById('jp_du');
+  if(f) f.value=du; if(e) e.innerHTML=(c===a?'Calcul automatique : ':'Nouveau chauffeur <b>'+h(c)+'</b> : ')+fmtH(hh)+' × '+money(tauxDe(c))+' = <b>'+money(Math.round(hh*tauxDe(c)))+'</b>'; }
 async function trJpEnreg(ch,mo){
-  ch=decodeURIComponent(ch); const r=trJpLignes().find(x=>x.ch===ch&&x.mo===mo); if(!r) return;
-  const nch=val('jp_ch')||ch;
+  ch=decodeURIComponent(ch); let r=trJpLignes().find(x=>x.ch===ch&&x.mo===mo); if(!r) return;
+  const nch=val('jp_ch')||ch, ancien=ch;
+  let m=n0(val('jp_m')), du=Math.max(0,n0(val('jp_du'))); const d=val('jp_d')||new Date().toISOString().slice(0,10), note=String(val('jp_n')||'').trim();
   if(nch!==ch){
-    /* changement de chauffeur : les travaux du mois passent au nouveau chauffeur (à son taux) ; le payé s'ajoute au sien */
-    const m0=n0(val('jp_m')), d0=val('jp_d')||new Date().toISOString().slice(0,10), note0=String(val('jp_n')||'').trim();
+    /* changement de chauffeur EN MÊME TEMPS que la paie : les travaux du mois passent au nouveau chauffeur (à son taux),
+       puis le salaire et le payé de la fenêtre sont enregistrés pour lui (ajoutés à ce qu'il avait déjà ce mois-là) ; les avances suivent */
+    const t0=trJpLignes().find(x=>x.ch===nch&&x.mo===mo), av=[...((r.p&&r.p.avances)||[]),...((t0&&t0.p&&t0.p.avances)||[])];
     const L=trTravaux().filter(x=>x.chauffeur===ch&&locD(x.date).slice(0,7)===mo);
     for(const x of L) await put('tracto',{...x,chauffeur:nch,taux:tauxDe(nch)});
     if(r.p) await del('tracto',trPaieId(ch,mo)); if(r.mod) await del('tracto',trDuId(ch,mo));
-    const t=trJpLignes().find(x=>x.ch===nch&&x.mo===mo);
-    if(t&&m0>0){ const tot=Math.min(t.du,t.pa+m0); await put('tracto',Object.assign({},t.p||{},{id:trPaieId(nch,mo),kind:'paie',chauffeur:nch,mois:mo,heures:t.hh,taux:tauxDe(nch),montant:t.du,paye:tot,note:note0,date:new Date(d0+'T12:00:00').toISOString()})); }
-    journal('Tractopelle : paie '+moisTxt(mo)+' – chauffeur changé '+ch+' → '+nch+' ('+L.length+' travail(aux), '+fmtH(r.hh)+')');
-    document.querySelectorAll('.modal').forEach(x=>x.remove()); toast('Chauffeur changé : '+L.length+' travail(aux) passent à '+nch); render(); return;
+    du+=t0?t0.du:0; m+=t0?t0.pa:0; ch=nch;
+    r=trJpLignes().find(x=>x.ch===ch&&x.mo===mo)||{hh:0,brut:0,du:0,pa:0,p:null,mod:null};
+    if(av.length) r.p=Object.assign({},r.p||{},{avances:av});
+    journal('Tractopelle : paie '+moisTxt(mo)+' – chauffeur changé '+ancien+' → '+nch+' ('+L.length+' travail(aux))');
   }
-  const m=n0(val('jp_m')), du=Math.max(0,n0(val('jp_du'))), d=val('jp_d')||new Date().toISOString().slice(0,10), note=String(val('jp_n')||'').trim();
   /* montant du salaire du mois : gardé à part s'il diffère du calcul automatique ; les heures ne changent pas */
   if(du!==r.brut) await put('tracto',{id:trDuId(ch,mo),kind:'paiedu',chauffeur:ch,mois:mo,heures:r.hh,brut:r.brut,montant:du,note,date:new Date().toISOString()});
   else if(r.mod) await del('tracto',trDuId(ch,mo));
   const id=trPaieId(ch,mo);
   if(m>0) await put('tracto',Object.assign({},r.p||{},{id,kind:'paie',chauffeur:ch,mois:mo,heures:r.hh,taux:tauxDe(ch),montant:du,paye:m,note,date:new Date(d+'T12:00:00').toISOString()}));
-  else if(r.p) await del('tracto',id);
+  else if(r.p&&TRC.some(x=>x.id===id)) await del('tracto',id);
   journal('Tractopelle : paie du chauffeur modifiée '+ch+' '+mo+' – salaire '+money(du)+(du!==r.brut?' (calcul '+money(r.brut)+')':'')+', payé '+money(m)+', heures '+fmtH(r.hh));
-  document.querySelectorAll('.modal').forEach(x=>x.remove()); toast(du<=0?'Enregistré : montant 0, les heures restent':m<=0?'Enregistré : rien payé, reste '+money(du):m>=du?'Paie enregistrée : payé':'Paie enregistrée : reste '+money(du-m)); render();
+  document.querySelectorAll('.modal').forEach(x=>x.remove()); toast((ch!==ancien?'Chauffeur changé ('+ancien+' → '+ch+') – ':'')+(du<=0?'Enregistré : montant 0, les heures restent':m<=0?'Enregistré : rien payé, reste '+money(du):m>=du?'Paie enregistrée : payé':'Paie enregistrée : reste '+money(du-m))); render();
 }
 async function trJpNonPaye(ch,mo){
   ch=decodeURIComponent(ch); if(!confirm('Remettre en « Non payé » le salaire de '+ch+' ('+moisTxt(mo)+') ?')) return;
